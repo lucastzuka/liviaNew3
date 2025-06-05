@@ -5,6 +5,7 @@ Livia é um chatbot inteligente para Slack que usa **OpenAI Agents SDK** e **API
 ## ✨ Características
 
 - **🎯 Resposta Inteligente**: Responde apenas em threads que começam com uma menção ao bot
+- **⚡ STREAMING EM TEMPO REAL**: Respostas aparecem progressivamente conforme são geradas pela IA
 - **🛠️ Ferramentas Avançadas**:
   - 🔍 **Web Search Tool** - Busca informações atuais na internet, notícias e fatos
   - 👁️ **Image Vision** - Análise de imagens enviadas via Slack ou URLs
@@ -14,6 +15,7 @@ Livia é um chatbot inteligente para Slack que usa **OpenAI Agents SDK** e **API
 - **🚀 OpenAI Agents SDK**: Usa a mais recente tecnologia de agentes da OpenAI
 - **🔄 API Responses**: Utiliza a nova API Responses da OpenAI para automação
 - **🛡️ Proteção Anti-Loop**: Sistema robusto contra respostas infinitas
+- **📱 Experiência ChatGPT no Slack**: Interface de conversação fluida e responsiva
 
 ## Configuração
 
@@ -208,31 +210,36 @@ python server.py
    @Livia Olá! Como você pode me ajudar?
    ```
 
-2. **Continue a conversa na thread** - Livia responderá apenas em threads que começaram com uma menção
+2. **🚀 EXPERIÊNCIA STREAMING**: Veja as respostas aparecendo em tempo real!
+   - ✅ Mensagem inicial: "🤔 Pensando..."
+   - ✅ Texto aparece progressivamente conforme IA gera
+   - ✅ Experiência similar ao ChatGPT web interface
 
-3. **Envie imagens** para análise:
+3. **Continue a conversa na thread** - Livia responderá apenas em threads que começaram com uma menção
+
+4. **Envie imagens** para análise:
    - **Upload direto**: Faça upload de uma imagem no Slack
    - **Link de imagem**: Cole um link de imagem na conversa
    - **Formatos suportados**: PNG, JPEG, WEBP, GIF (não animado)
    - Livia analisará automaticamente e descreverá o conteúdo
 
-4. **Use comandos naturais**:
+5. **Use comandos naturais com STREAMING**:
 
-   **🔍 Busca na Web:**
+   **🔍 Busca na Web (com streaming):**
    - "Pesquise informações sobre IA na internet"
    - "Qual é a cotação do dólar hoje?"
    - "Busque notícias recentes sobre tecnologia"
 
-   **👁️ Análise de Imagens:**
+   **👁️ Análise de Imagens (com streaming):**
    - "Analise esta imagem" (com upload de imagem)
    - "O que você vê nesta foto?" (com link de imagem)
 
-   **📋 Asana:**
+   **📋 Asana (com streaming):**
    - "Crie uma tarefa no Asana: Revisar documentação"
    - "Liste meus projetos no Asana"
    - "Qual o status das tarefas do projeto X?"
 
-   **⚡ Zapier Integrations:**
+   **⚡ Zapier Integrations (com streaming):**
    - **Google Drive**: "Buscar arquivo TargetGroupIndex_BR2024 no Google Drive"
    - **Gmail**: "Enviar email para cliente@empresa.com sobre proposta"
    - **Google Calendar**: "Agendar reunião com equipe para sexta-feira às 15h"
@@ -240,6 +247,8 @@ python server.py
    - **Everhour**: "Registrar 3 horas de desenvolvimento no projeto Alpha"
    - **Google Analytics**: "Mostrar dados de tráfego da última semana"
    - **Google Slides**: "Criar apresentação sobre resultados do trimestre"
+
+   **🚀 TODAS as respostas aparecem em tempo real com streaming!**
 
 ### 6. Análise de Imagens com IA
 
@@ -290,13 +299,14 @@ liviaNEW3/
 ```
 
 ### 🔧 Componentes Principais
-- **agent.py**: Define a Livia com sistema modular de MCPs do Zapier
-- **server.py**: Servidor Socket Mode do Slack com proteção anti-loop
+- **agent.py**: Define a Livia com sistema modular de MCPs do Zapier + **STREAMING**
+- **server.py**: Servidor Socket Mode do Slack com proteção anti-loop + **STREAMING**
 - **tools/**: Módulo de ferramentas (WebSearch, ImageProcessor)
-- **OpenAI Agents SDK**: Orquestração de agentes inteligentes
-- **MCP Local**: Comunicação com APIs locais (Slack)
-- **Zapier Remote MCPs**: Sistema modular de automação via API Responses
-- **API Responses**: Nova API da OpenAI para agentes e automação
+- **OpenAI Agents SDK**: Orquestração de agentes inteligentes com **streaming nativo**
+- **MCP Local**: Comunicação com APIs locais (Slack) com **streaming**
+- **Zapier Remote MCPs**: Sistema modular de automação via API Responses com **streaming**
+- **API Responses**: Nova API da OpenAI para agentes e automação com **streaming**
+- **🚀 STREAMING ENGINE**: Sistema de atualizações em tempo real no Slack
 
 ### 🏗️ Arquitetura Modular dos MCPs
 
@@ -319,11 +329,47 @@ ZAPIER_MCPS = {
 }
 ```
 
-**🔄 Fluxo de Roteamento**:
+**🔄 Fluxo de Roteamento com Streaming**:
 1. **Detecção**: Sistema analisa palavras-chave na mensagem
 2. **Roteamento**: Direciona para o MCP apropriado automaticamente
-3. **Processamento**: OpenAI Responses API processa via MCP específico
-4. **Fallback**: Se falhar, usa agente local com Slack MCP
+3. **Processamento**: OpenAI Responses API processa via MCP específico **com streaming**
+4. **Streaming**: Respostas aparecem progressivamente no Slack em tempo real
+5. **Fallback**: Se falhar, usa agente local com Slack MCP **também com streaming**
+
+## 🚀 STREAMING EM TEMPO REAL
+
+### ✨ Nova Funcionalidade Revolucionária!
+
+A Livia agora oferece **respostas em tempo real** similar ao ChatGPT web interface, mas diretamente no Slack!
+
+#### 🎬 Como Funciona:
+
+1. **Usuário menciona**: `@Livia procure arquivo no Google Drive`
+2. **Resposta inicial**: "🤔 Pensando..." (imediata)
+3. **Streaming**: Texto aparece progressivamente conforme IA gera
+4. **Finalização**: Resposta completa exibida
+
+#### ⚡ Tecnologias Utilizadas:
+
+- **OpenAI Responses API Streaming**: Para MCPs Zapier (Google Drive, Gmail, etc.)
+- **OpenAI Agents SDK Streaming**: Para agente local (Web Search, Slack MCP)
+- **Slack API Updates**: Atualizações inteligentes de mensagens
+- **Rate Limiting**: Otimizado para evitar spam (20 chars OU 1 segundo)
+
+#### 🎯 Benefícios:
+
+- ✅ **Feedback Imediato**: Usuário sabe que bot está processando
+- ✅ **Experiência Fluida**: Similar ao ChatGPT web
+- ✅ **Performance Otimizada**: Rate limiting inteligente
+- ✅ **Compatibilidade Total**: Funciona com TODOS os MCPs existentes
+
+#### 📊 Suporte Completo:
+
+- ✅ **Respostas Simples**: Streaming para conversas básicas
+- ✅ **Web Search**: Busca na internet com streaming
+- ✅ **MCPs Zapier**: Google Drive, Gmail, Asana, etc. com streaming
+- ✅ **Análise de Imagens**: Visão computacional com streaming
+- ✅ **Tool Calls**: Todas as ferramentas com streaming
 
 ## 🚀 Adicionando Novos MCPs do Zapier
 
