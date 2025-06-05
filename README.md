@@ -128,10 +128,10 @@ A Livia vem com integração ao Asana via MCP (Model Context Protocol).
 #### ⚡ Zapier Automation (Modular)
 Sistema modular de integração com Zapier Remote MCP para automação de workflows.
 
-**🔧 Integrações Ativas**:
+**🔧 Integrações Ativas** (com JSON Mode otimizado):
 - ✅ **Asana**: Gerenciar projetos, tarefas e workspaces
 - ✅ **Google Drive**: Buscar, listar, criar e gerenciar arquivos e pastas
-- ✅ **Everhour**: Controle de tempo, timesheet e rastreamento de horas
+- ✅ **Everhour**: ⏰ Controle de tempo, timesheet e rastreamento de horas (JSON estruturado)
 - ✅ **Google Docs**: Criar, editar e gerenciar documentos de texto
 - ✅ **Slack Externo**: Enviar mensagens para outros workspaces
 - ✅ **Google Calendar**: Criar e gerenciar eventos, reuniões e compromissos
@@ -147,12 +147,45 @@ Sistema modular de integração com Zapier Remote MCP para automação de workfl
 **📝 Exemplos de Comandos**:
 - **Asana**: "Busque as últimas 3 tarefas do projeto Pauta Inovação"
 - **Google Drive**: "Buscar arquivo TargetGroupIndex_BR2024 no Google Drive"
-- **Everhour**: "Registrar 2 horas de trabalho no projeto X"
+- **Everhour**: "adicionar 2h na task ev:273393148295192 no projeto ev:273391483277215 no everhour"
 - **Google Docs**: "Criar documento sobre reunião de planejamento"
 - **Gmail**: "Enviar email para equipe@empresa.com sobre o projeto"
 - **Google Calendar**: "Agendar reunião para amanhã às 14h"
 - **Google Analytics**: "Mostrar métricas de tráfego do último mês"
 - **Google Slides**: "Criar apresentação sobre resultados Q4"
+
+### ⏰ **Everhour Time Tracking - Funcionalidade Avançada**
+
+**🎯 Descoberta Importante**: O Everhour MCP funciona perfeitamente com **JSON Mode** para respostas estruturadas!
+
+**✅ Funcionalidades Confirmadas**:
+- ✅ **Adicionar Tempo**: Funciona 100% com IDs diretos
+- ✅ **Buscar Projetos**: Encontra projetos por nome
+- ❌ **Buscar Tasks por ID**: Limitação conhecida (use IDs diretos)
+
+**📋 Formato de Comando**:
+```
+@Livia adicionar 2h na task ev:273393148295192 no projeto ev:273391483277215 no everhour
+```
+
+**📊 Resposta JSON Estruturada**:
+```json
+{
+  "success": true,
+  "task_id": "ev:273393148295192",
+  "project_id": "ev:273391483277215",
+  "time_added": "2h",
+  "date": "2024-06-07",
+  "comment": "Time tracking",
+  "error_message": null
+}
+```
+
+**🚨 Requisitos Críticos**:
+- **VPN**: Deve estar **DESLIGADA** (causa problemas de timezone/geolocalização)
+- **Formato de Tempo**: Use '1h', '2h', '30m' (NUNCA '1:00')
+- **IDs Completos**: Sempre use prefixo 'ev:' (ex: ev:273393148295192)
+- **Data Local**: Sistema usa timezone brasileiro automaticamente
 
 **➕ Como Adicionar Novas Integrações**:
 1. Configure o MCP no Zapier (mcp.zapier.com)
@@ -394,6 +427,13 @@ Para contribuir ou modificar:
 5. **Google Drive não encontra arquivos**:
    - ✅ Use "buscar arquivo" em vez de "buscar pasta"
    - ✅ Tente nomes parciais: "TargetGroup" para "TargetGroupIndex_BR2024"
+
+6. **Everhour MCP não funciona**:
+   - 🌍 **CRÍTICO**: Desligue a VPN (causa problemas de timezone)
+   - ⏰ **Formato**: Use '2h', '1h30m' (NUNCA '2:00')
+   - 🔑 **IDs**: Use prefixo 'ev:' completo (ev:273393148295192)
+   - 📅 **Data**: Sistema usa timezone brasileiro automaticamente
+   - ✅ **Teste**: "adicionar 1h na task ev:ID no projeto ev:ID no everhour"
 
 ### 📊 Logs e Debug
 

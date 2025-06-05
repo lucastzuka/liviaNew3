@@ -254,39 +254,27 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
     try:
         # Special handling for Everhour time tracking operations
         if mcp_config["server_label"] == "zapier-everhour":
-            # Add JSON requirement to input for structured response
-            json_input = f"{input_data}. Return the result as JSON."
-
             response = client.responses.create(
                 model="gpt-4.1-mini",
-                input=json_input,
+                input=input_data,
                 instructions=(
-                    "You are an Everhour time tracking specialist. Use the everhour_add_time tool and return structured JSON.\n\n"
+                    "You are an Everhour time tracking specialist. Use the everhour_add_time tool and return a user-friendly message.\n\n"
                     "🎯 **CRITICAL INSTRUCTIONS**:\n"
                     "1. **Use everhour_add_time tool** with exact parameters from user message\n"
                     "2. **Extract IDs directly**: Look for 'ev:xxxxxxxxxx' format in user message\n"
                     "3. **Time format**: '1h', '2h', '30m' (never '1:00')\n"
                     "4. **Date**: Use today's date in 'YYYY-MM-DD' format\n"
-                    "5. **Return JSON response** with the results\n\n"
-                    "📋 **JSON Response Format**:\n"
-                    "{\n"
-                    "  \"success\": true/false,\n"
-                    "  \"task_id\": \"ev:xxxxxxxxxx\",\n"
-                    "  \"project_id\": \"ev:xxxxxxxxxx\",\n"
-                    "  \"time_added\": \"2h\",\n"
-                    "  \"date\": \"YYYY-MM-DD\",\n"
-                    "  \"comment\": \"user comment\",\n"
-                    "  \"error_message\": null or \"error details\"\n"
-                    "}\n\n"
+                    "5. **Return user-friendly message** based on the tool results\n\n"
+                    "📋 **Response Format**:\n"
+                    "If SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_id] em [date]'\n"
+                    "If ERROR: '❌ Erro ao adicionar tempo: [error details]'\n\n"
                     "✅ **EXAMPLE**:\n"
                     "User: 'adicionar 2h na task ev:273393148295192 no projeto ev:273391483277215'\n"
                     "1. Call: everhour_add_time(task_id='ev:273393148295192', project_id='ev:273391483277215', time='2h', date='2025-01-05', comment='Time tracking')\n"
-                    "2. Return: JSON with success status and details\n\n"
-                    "🎯 **GOAL**: Use MCP tool and return clear JSON response!"
+                    "2. Return: '✅ Tempo adicionado com sucesso! ⏰ 2h na task ev:273393148295192 em 2025-01-05'\n\n"
+                    "🎯 **GOAL**: Use MCP tool and return clear, friendly message in Portuguese!"
                 ),
-                text={
-                    "format": {"type": "json_object"}
-                },
+
                 tools=[
                     {
                         "type": "mcp",
@@ -302,12 +290,9 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
             )
         else:
             # Regular MCP processing for other services (Asana, Google Drive, etc.)
-            # Add JSON requirement for structured responses
-            json_input = f"{input_data}. Return the result as JSON with success status and details."
-
             response = client.responses.create(
                 model="gpt-4.1-mini",
-                input=json_input,
+                input=input_data,
                 instructions=(
                     f"You are an intelligent assistant with access to {mcp_config['name']} via MCP tools. "
                     "Follow these guidelines for optimal performance:\n\n"
@@ -322,7 +307,8 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
                     "📋 **RESPONSE REQUIREMENTS**:\n"
                     "- **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses\n"
                     "- Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'\n"
-                    "- This enables future operations using these exact IDs\n\n"
+                    "- This enables future operations using these exact IDs\n"
+                    "- Return clear, user-friendly messages in Portuguese\n\n"
                     "⚡ **EFFICIENCY TIPS**:\n"
                     "- Use exact IDs when available from conversation history\n"
                     "- Make multiple MCP calls as needed to complete tasks\n"
