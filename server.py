@@ -1,4 +1,4 @@
-# server.py (Key parts related to initialization and structure)
+# server.py - Slack Socket Mode Server for Livia Chatbot
 
 import os
 import asyncio
@@ -8,13 +8,10 @@ from typing import Dict, Any, Optional, List
 import slack_bolt
 from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
 from slack_bolt.app.async_app import AsyncApp
-# Import AsyncWebClient for SSL config
 from slack_sdk.web.async_client import AsyncWebClient
-# from slack_sdk.errors import SlackApiError  # Not used currently
 import ssl
-import certifi # For SSL certificate handling
-import aiohttp
-import base64
+import certifi
+
 from agent import (
     create_slack_mcp_server,
     create_asana_mcp_server,
@@ -22,6 +19,7 @@ from agent import (
     process_message,
     MCPServerStdio,
 )
+from tools import ImageProcessor
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -153,11 +151,7 @@ class SlackSocketModeServer:
                 processed_image_urls = []
                 if image_urls:
                     logger.info(f"Processing {len(image_urls)} images...")
-                    for img_url in image_urls:
-                        processed_url = await self._process_slack_image(img_url)
-                        if processed_url:
-                            processed_image_urls.append(processed_url)
-                    logger.info(f"Successfully processed {len(processed_image_urls)} images")
+                    processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
 
                 # Delegate processing to the agent with image support
                 response = await process_message(agent, context_input, processed_image_urls)
@@ -170,72 +164,11 @@ class SlackSocketModeServer:
 
     def _extract_image_urls(self, event: Dict[str, Any]) -> List[str]:
         """Extract image URLs from Slack event."""
-        image_urls = []
-
-        # Check for file uploads
-        files = event.get("files", [])
-        for file in files:
-            if file.get("mimetype", "").startswith("image/"):
-                # For Slack uploaded images, we need to use the URL with auth headers
-                if "url_private" in file:
-                    # Add auth header info to the URL for Slack images
-                    slack_image_url = f"{file['url_private']}?token={os.environ.get('SLACK_BOT_TOKEN', '')}"
-                    image_urls.append(slack_image_url)
-                    logger.info(f"Found uploaded image: {file.get('name', 'unknown')} - {file['url_private']}")
-
-        # Check for image URLs in text (enhanced URL detection)
-        text = event.get("text", "")
-        import re
-
-        # Pattern for image URLs (more comprehensive)
-        url_patterns = [
-            r'https?://[^\s<>]+\.(?:jpg|jpeg|png|gif|webp|bmp|tiff)(?:\?[^\s<>]*)?',  # Direct image URLs
-            r'https?://[^\s<>]*(?:imgur|flickr|instagram|twitter|facebook)[^\s<>]*',   # Image hosting sites
-            r'https?://[^\s<>]*\.(?:com|org|net)/[^\s<>]*\.(?:jpg|jpeg|png|gif|webp)', # Images on websites
-        ]
-
-        for pattern in url_patterns:
-            found_urls = re.findall(pattern, text, re.IGNORECASE)
-            for url in found_urls:
-                # Clean up URL (remove trailing punctuation)
-                url = re.sub(r'[.,;!?]+$', '', url)
-                if url not in image_urls:
-                    image_urls.append(url)
-                    logger.info(f"Found image URL in text: {url}")
-
-        if image_urls:
-            logger.info(f"Total images found: {len(image_urls)}")
-
-        return image_urls
+        return ImageProcessor.extract_image_urls(event)
 
     async def _process_slack_image(self, image_url: str) -> Optional[str]:
         """Process Slack private image URL to make it accessible."""
-        try:
-            if "files.slack.com" in image_url:
-                # For Slack images, we need to download and convert to base64
-
-                headers = {
-                    "Authorization": f"Bearer {os.environ.get('SLACK_BOT_TOKEN', '')}"
-                }
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(image_url, headers=headers) as response:
-                        if response.status == 200:
-                            image_data = await response.read()
-                            # Convert to base64 data URL
-                            content_type = response.headers.get('content-type', 'image/jpeg')
-                            base64_image = base64.b64encode(image_data).decode('utf-8')
-                            return f"data:{content_type};base64,{base64_image}"
-                        else:
-                            logger.error(f"Failed to download Slack image: {response.status}")
-                            return None
-            else:
-                # For external URLs, return as-is
-                return image_url
-
-        except Exception as e:
-            logger.error(f"Error processing image URL {image_url}: {e}")
-            return None
+        return await ImageProcessor.process_slack_image(image_url)
 
     async def _is_thread_started_with_mention(self, channel_id: str, thread_ts: str) -> bool:
         """Check if a thread was started with a mention to Livia."""
@@ -300,7 +233,13 @@ class SlackSocketModeServer:
                 logger.info("Not a thread reply, DM, or mention - ignoring")
                 return
 
-            # If it's a mention in text but not processed as app_mention, handle it here
+            # Skip processing mentions in message events if they're in threads
+            # (they'll be handled by app_mention event)
+            if is_mention_in_text and thread_ts:
+                logger.info("Mention in thread detected, will be handled by app_mention event")
+                return
+
+            # If it's a mention in text but not in thread, handle it here
             if is_mention_in_text and not thread_ts:
                 logger.info("Detected mention in message text, processing as mention...")
                 # Clean the text
