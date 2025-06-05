@@ -291,9 +291,32 @@ class SlackSocketModeServer:
 
             logger.info(f"Message: '{text}', Channel: {channel_id}, Thread: {thread_ts}")
 
-            # Process thread replies OR direct messages
-            if not thread_ts and event.get("channel_type") != "im":
-                logger.info("Not a thread reply or DM, ignoring")
+            # Check if this is a mention in the message text (fallback detection)
+            bot_user_id = "U057233T98A"  # Your bot's user ID
+            is_mention_in_text = f"<@{bot_user_id}>" in text
+
+            # Process thread replies, direct messages, OR mentions in text
+            if not thread_ts and event.get("channel_type") != "im" and not is_mention_in_text:
+                logger.info("Not a thread reply, DM, or mention - ignoring")
+                return
+
+            # If it's a mention in text but not processed as app_mention, handle it here
+            if is_mention_in_text and not thread_ts:
+                logger.info("Detected mention in message text, processing as mention...")
+                # Clean the text
+                cleaned_text = text.replace(f"<@{bot_user_id}>", "").strip()
+                if not cleaned_text:
+                    cleaned_text = "Hello! How can I help you?"
+
+                image_urls = self._extract_image_urls(event)
+                await self._process_and_respond(
+                    text=cleaned_text,
+                    say=say,
+                    channel_id=channel_id,
+                    thread_ts_for_reply=event.get("ts"),  # Use message timestamp as thread
+                    image_urls=image_urls,
+                    use_thread_history=False
+                )
                 return
 
             # For DMs, always process. For threads, check if started with mention
@@ -385,7 +408,7 @@ async def initialize_agent():
             logger.warning(f"Failed to initialize Asana MCP Server (optional): {e}")
             asana_mcp_server = None
 
-        # Create the agent with the MCP servers
+        # Create the agent with the MCP servers (Zapier is now integrated via Remote MCP)
         agent = await create_agent(slack_mcp_server, asana_mcp_server)
 
         logger.info("Livia agent successfully initialized.")

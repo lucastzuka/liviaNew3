@@ -61,6 +61,7 @@ async def create_asana_mcp_server() -> MCPServerStdio:
     logger.info("Asana MCP Server instance created with token authentication.")
     return asana_server
 
+
 async def create_slack_mcp_server() -> MCPServerStdio:
     """Creates and returns a Slack MCP Server instance using MCPServerStdio."""
 
@@ -113,8 +114,12 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
         mcp_servers.append(asana_server)
         server_descriptions.append(f"'{asana_server.name}'")
 
+
+
     # Build instructions with available tools
     asana_tools_description = ""
+    zapier_tools_description = ""
+
     if asana_server:
         asana_tools_description = (
             "📋 **Asana Tools** (via MCP Server):\n"
@@ -142,6 +147,20 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "  - NEVER use projects_any - always use projects=['project_id'] as array\n"
         )
 
+    # ✅ Zapier MCP integration is now active and configured
+    zapier_tools_description = (
+        "⚡ **Zapier Automation Tools** (ATIVO via Remote MCP):\n"
+        "  - ✅ Google Drive: buscar, listar, criar e gerenciar arquivos\n"
+        "  - ✅ Gmail: enviar emails e gerenciar mensagens\n"
+        "  - ✅ Notion: criar e atualizar páginas e bancos de dados\n"
+        "  - ✅ Trello: gerenciar cards e boards\n"
+        "  - ✅ Automação entre 6000+ aplicações disponível\n\n"
+        "**Comandos Zapier:**\n"
+        "  - 'buscar arquivos no drive', 'listar documentos', 'criar pasta'\n"
+        "  - 'enviar email', 'criar página no notion', 'adicionar card no trello'\n"
+        "  - Use palavras-chave como 'drive', 'gmail', 'automation' para ativar\n"
+    )
+
     agent = Agent(
         name="Livia",
         # Instructions guiding the agent on how to behave and use tools
@@ -152,6 +171,7 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers\n"
             "👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs\n"
             f"{asana_tools_description}"
+            f"{zapier_tools_description}"
             "📱 **Slack Tools** (via MCP Server):\n"
             "  - List channels and users\n"
             "  - Post messages and reply to threads\n"
@@ -185,8 +205,63 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
     return agent
 
 
+async def process_message_with_zapier(message: str, image_urls: Optional[List[str]] = None) -> str:
+    """Process message using OpenAI Responses API with Zapier Remote MCP."""
+    from openai import OpenAI
+
+    client = OpenAI()
+
+    # Prepare input
+    if image_urls:
+        input_content = [{"type": "input_text", "text": message}]
+        for image_url in image_urls:
+            input_content.append({
+                "type": "input_image",
+                "image_url": image_url,
+                "detail": "low"
+            })
+        input_data = input_content
+    else:
+        input_data = message
+
+    # ✅ Updated Zapier MCP configuration with correct credentials
+    ZAPIER_MCP_URL = "https://mcp.zapier.com/api/mcp/s/196901ca-f828-4a37-ba99-383e7a618534/mcp"
+    ZAPIER_MCP_TOKEN = "MTk2OTAxY2EtZjgyOC00YTM3LWJhOTktMzgzZTdhNjE4NTM0OjJkOWQ0MTFiLTk0YjktNDMyMi1hNTEwLTI4NjRiMmY1NWE0MQ=="
+
+    # Create response with Zapier MCP
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=input_data,
+        tools=[
+            {
+                "type": "mcp",
+                "server_label": "zapier-gdrive",
+                "server_url": ZAPIER_MCP_URL,
+                "require_approval": "never",
+                "headers": {
+                    "Authorization": f"Bearer {ZAPIER_MCP_TOKEN}"
+                }
+            }
+        ]
+    )
+
+    return response.output_text or "No response generated."
+
 async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None) -> str:
     """Runs the agent with the given message and optional image URLs, returns the final output."""
+
+    # ✅ Zapier MCP is now properly configured - re-enabling detection
+    # Check if message requires Zapier tools
+    zapier_keywords = ["zapier", "google drive", "gmail", "notion", "trello", "automation", "workflow", "integrate", "drive", "arquivo", "pasta", "documento"]
+    needs_zapier = any(keyword in message.lower() for keyword in zapier_keywords)
+
+    if needs_zapier:
+        logger.info("Message requires Zapier tools, using Responses API with Remote MCP")
+        try:
+            return await process_message_with_zapier(message, image_urls)
+        except Exception as e:
+            logger.warning(f"Zapier MCP failed, falling back to regular agent: {e}")
+            # Fall back to regular agent processing
 
     # Generate a trace ID for monitoring the agent's execution flow
     trace_id = gen_trace_id()
