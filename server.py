@@ -251,11 +251,11 @@ class SlackSocketModeServer:
                     current_text = full_text
                     current_time = time.time()
 
-                    # Update message every 20 characters or every 1 second, or when complete
+                    # Update message every 10 characters or every 0.5 seconds, or when complete
                     should_update = (
-                        len(current_text) - last_update_length >= 20 or  # Every 20 chars
-                        current_time - last_update_time >= 1.0 or       # Every 1 second
-                        not delta_text                                   # When complete
+                        len(current_text) - last_update_length >= 10 or  # Every 10 chars
+                        current_time - last_update_time >= 0.5 or        # Every 0.5 seconds
+                        not delta_text                                    # When complete
                     )
 
                     if should_update and current_text:

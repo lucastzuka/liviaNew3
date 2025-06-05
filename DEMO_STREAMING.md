@@ -62,7 +62,7 @@ A Livia agora oferece **respostas em tempo real** no Slack, similar à experiên
 1. **OpenAI Responses API** (para MCPs Zapier):
    ```python
    stream = client.responses.create(
-       model="gpt-4.1-mini",
+       model="gpt-4.1",
        input=input_data,
        stream=True  # ← Streaming habilitado!
    )

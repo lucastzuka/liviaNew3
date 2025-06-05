@@ -276,7 +276,7 @@ python server.py
 
 ### 6. Análise de Imagens com IA
 
-A Livia possui capacidades avançadas de visão computacional usando o modelo **gpt-4.1-mini** para análise de imagens:
+A Livia possui capacidades avançadas de visão computacional usando o modelo **gpt-4.1** para análise de imagens:
 
 #### **Como Usar:**
 

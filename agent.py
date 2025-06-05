@@ -75,7 +75,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-gcalendar",
         "url": "https://mcp.zapier.com/api/mcp/s/e364090d-c050-4ace-97af-1314ab430dfe/mcp",
         "token": "ZTM2NDA5MGQtYzA1MC00YWNlLTk3YWYtMTMxNGFiNDMwZGZlOjhlZDliNGNlLTlhYzAtNDU0NC1hOWViLTA3ZDgyMjMyNDEzZg==",
-        "keywords": ["calendar"],
+        "keywords": ["calendar", "calendario", "eventos", "evento", "reuniao", "reunioes", "compromisso", "compromissos", "agenda"],
         "description": "📅 **Google Calendar**: criar e gerenciar eventos, reuniões e compromissos"
     },
     "gmail": {
@@ -214,7 +214,7 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
             "- Always cite sources when providing information from web searches\n"
             "- You can help with general questions, provide information, and assist with Slack-related tasks"
         ),
-        model="gpt-4.1-mini",
+        model="gpt-4.1",
         tools=[web_search_tool, file_search_tool],
         mcp_servers=mcp_servers,
     )
@@ -266,24 +266,13 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         # Special handling for Everhour time tracking operations
         if mcp_config["server_label"] == "zapier-everhour":
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
-                    "You are an Everhour time tracking specialist. Use the everhour_add_time tool and return a user-friendly message.\n\n"
-                    "🎯 **CRITICAL INSTRUCTIONS**:\n"
-                    "1. **Use everhour_add_time tool** with exact parameters from user message\n"
-                    "2. **Extract IDs directly**: Look for 'ev:xxxxxxxxxx' format in user message\n"
-                    "3. **Time format**: '1h', '2h', '30m' (never '1:00')\n"
-                    "4. **Date**: Use today's date in 'YYYY-MM-DD' format\n"
-                    "5. **Return user-friendly message** based on the tool results\n\n"
-                    "📋 **Response Format**:\n"
-                    "If SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_id] em [date]'\n"
-                    "If ERROR: '❌ Erro ao adicionar tempo: [error details]'\n\n"
-                    "✅ **EXAMPLE**:\n"
-                    "User: 'adicionar 2h na task ev:273393148295192 no projeto ev:273391483277215'\n"
-                    "1. Call: everhour_add_time(task_id='ev:273393148295192', project_id='ev:273391483277215', time='2h', date='2025-01-05', comment='Time tracking')\n"
-                    "2. Return: '✅ Tempo adicionado com sucesso! ⏰ 2h na task ev:273393148295192 em 2025-01-05'\n\n"
-                    "🎯 **GOAL**: Use MCP tool and return clear, friendly message in Portuguese!"
+                    "You are Livia, AI assistant from ℓiⱴε agency. Use everhour_add_time tool with exact parameters.\n"
+                    "Extract ev:xxxxxxxxxx IDs from message. Time format: 1h, 2h, 30m. Use today's date YYYY-MM-DD.\n"
+                    "SUCCESS: 'Tempo adicionado! [time] na task [task_id]'\n"
+                    "ERROR: 'Erro: [details]'"
                 ),
                 tools=[
                     {
@@ -303,36 +292,24 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-gcalendar":
             # Special handling for Google Calendar with consistent date parameters
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
-                    "You are a Google Calendar specialist. Use the available Google Calendar tools to search and manage events.\n\n"
-                    "🗓️ **CALENDAR SEARCH STRATEGY**:\n"
-                    "1. **CRITICAL: Today is June 5, 2025**: Use 2025-06-05 as reference for 'today'\n"
-                    "2. **Default time range**: Search for events from today to next 7 days\n"
-                    "3. **Be specific with dates**: Always include start_date and end_date parameters\n"
-                    "4. **Timezone**: Use 'America/Sao_Paulo' timezone\n\n"
-                    "📋 **SEARCH EXAMPLES**:\n"
-                    "- For today's events: start_date='2025-06-05', end_date='2025-06-05'\n"
-                    "- For this week: start_date='2025-06-05', end_date='2025-06-12'\n"
-                    "- For next events: start_date='2025-06-05', end_date='2025-06-19'\n"
-                    "- For future events: start_date='2025-06-06', end_date='2025-06-30'\n\n"
-                    "📅 **RESPONSE FORMAT** (Portuguese):\n"
+                    "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
+                    "🗓️ **CRITICAL: Today is June 5, 2025**: Use 2025-06-05 as reference for 'today'\n"
+                    "📅 **Search Strategy**:\n"
+                    "- Try these tools in order: gcalendar_find_events, gcalendar_search_events, google_calendar_find_events\n"
+                    "- Use start_date and end_date parameters in YYYY-MM-DD format\n"
+                    "- Default range: today to next 7 days (2025-06-05 to 2025-06-12)\n"
+                    "- Timezone: America/Sao_Paulo\n"
+                    "- If no events found, try broader date range (2025-06-01 to 2025-06-30)\n\n"
+                    "📋 **Response Format** (Portuguese):\n"
                     "📅 **Eventos no Google Calendar:**\n"
                     "1. **[Nome do Evento]**\n"
                     "   - 📅 Data: [data]\n"
                     "   - ⏰ Horário: [hora início] às [hora fim]\n"
-                    "   - 🔗 Link: [link se disponível]\n"
-                    "   - 📹 Meet: [link meet se disponível]\n\n"
-                    "⚠️ **CRITICAL INSTRUCTIONS**:\n"
-                    "- TODAY IS JUNE 5, 2025 (2025-06-05) - NOT JANUARY!\n"
-                    "- Always search with explicit date ranges in JUNE 2025\n"
-                    "- Use gcalendar_find_events tool with start_date and end_date\n"
-                    "- If no events found, try broader date range in JUNE 2025\n"
-                    "- Always mention the CORRECT date range searched\n"
-                    "- Format times in São Paulo timezone\n"
-                    "- NEVER use January dates - we are in JUNE 2025!\n\n"
-                    "🎯 **GOAL**: Find and display calendar events for JUNE 2025 with correct dates."
+                    "   - 🔗 Link: [link se disponível]\n\n"
+                    "⚠️ **IMPORTANT**: Always search with explicit date ranges in JUNE 2025!"
                 ),
                 tools=[
                     {
@@ -354,7 +331,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 model="gpt-4o-mini",
                 input=input_data,
                 instructions=(
-                    "You are a Gmail specialist. Use the available Gmail tools to search and read emails.\n\n"
+                    "You are Livia, AI assistant from ℓiⱴε agency. Use Gmail tools to search and read emails.\n\n"
                     "🔍 **STEP-BY-STEP APPROACH**:\n"
                     "1. **First**: Use gmail_search_emails tool with search string 'in:inbox'\n"
                     "2. **Then**: Use gmail_get_email tool to read the first email from results\n"
@@ -394,34 +371,12 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-slack":
             # Special handling for Slack with message search and channel operations
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
-                    "You are a Slack specialist. Use the available Slack tools to search messages and manage channels.\n\n"
-                    "💬 **SLACK SEARCH STRATEGY**:\n"
-                    "1. **For channel messages**: Use slack_find_message tool with search query\n"
-                    "2. **Search operators**: Use 'in:channel-name' to search in specific channels\n"
-                    "3. **Sort by timestamp**: Always sort by 'timestamp' in descending order for latest messages\n"
-                    "4. **Channel names**: Use exact channel names like 'inovação' or 'inovacao'\n\n"
-                    "🔍 **SEARCH EXAMPLES**:\n"
-                    "- For channel messages: 'in:inovação' or 'in:inovacao'\n"
-                    "- For recent messages: 'in:channel-name' (automatically sorted by timestamp desc)\n"
-                    "- For specific content: 'in:channel-name keyword'\n\n"
-                    "📋 **RESPONSE FORMAT** (Portuguese):\n"
-                    "💬 **Últimas Mensagens do Canal [channel-name]:**\n\n"
-                    "**[User Name]** - [timestamp]\n"
-                    "📝 [message content]\n"
-                    "🔗 [permalink if available]\n\n"
-                    "**Resumo:** [Brief summary of the latest messages and main topics discussed]\n\n"
-                    "⚠️ **CRITICAL INSTRUCTIONS**:\n"
-                    "- ALWAYS use slack_find_message tool first\n"
-                    "- Use search query 'in:channel-name' format\n"
-                    "- Sort by 'timestamp' in 'desc' order for latest messages\n"
-                    "- If channel not found, try variations like 'inovacao' vs 'inovação'\n"
-                    "- Provide message content and user information\n"
-                    "- Include timestamps and permalinks when available\n"
-                    "- Summarize the main topics or themes from recent messages\n\n"
-                    "🎯 **GOAL**: Find and summarize recent Slack messages from the specified channel."
+                    "You are Livia, AI assistant from ℓiⱴε agency. Use slack_find_message with 'in:channel-name' format.\n"
+                    "Sort by timestamp desc. Try 'inovacao' or 'inovação' variations.\n"
+                    "Return: user, timestamp, message content, permalink, summary in Portuguese."
                 ),
                 tools=[
                     {
@@ -439,29 +394,12 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         else:
             # Regular MCP processing for other services (Asana, Google Drive, etc.)
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
-                    f"You are an intelligent assistant with access to {mcp_config['name']} via MCP tools. "
-                    "Follow these guidelines for optimal performance:\n\n"
-                    "🔍 **SEARCH STRATEGY**:\n"
-                    "1. **Sequential Search**: For hierarchical data (workspace → project → task):\n"
-                    "   - Step 1: Search for workspace/organization by name\n"
-                    "   - Step 2: Use workspace result to search for project\n"
-                    "   - Step 3: Use project result to search for specific task\n"
-                    "   - Example: Find workspace 'INOVAÇÃO' → Find project 'Inovação' → Find task 'Terminar Livia 2.0'\n\n"
-                    "2. **Limit Results**: Return only 4 results at a time, ask user if they want more\n"
-                    "3. **Be Specific**: Try exact names first, then partial matches if needed\n\n"
-                    "📋 **RESPONSE REQUIREMENTS**:\n"
-                    "- **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses\n"
-                    "- Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'\n"
-                    "- This enables future operations using these exact IDs\n"
-                    "- Return clear, user-friendly messages in Portuguese\n\n"
-                    "⚡ **EFFICIENCY TIPS**:\n"
-                    "- Use exact IDs when available from conversation history\n"
-                    "- Make multiple MCP calls as needed to complete tasks\n"
-                    "- If essential info is missing (size, color, etc.), ask follow-up questions first\n\n"
-                    "🎯 **GOAL**: Provide accurate, actionable results with all necessary IDs and details."
+                    f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access. Sequential search: workspace→project→task.\n"
+                    "Always include ALL IDs/numbers from responses. Limit 4 results. Portuguese responses.\n"
+                    "Example: 'Found project Inovação (ev:123) with task Name (ev:456)'"
                 ),
                 tools=[
                     {
@@ -509,7 +447,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                     model="gpt-4o-mini",
                     input="Busque apenas o último email recebido na caixa de entrada e faça um resumo muito breve",
                     instructions=(
-                        "You are a Gmail assistant. Search for the latest email in inbox using 'in:inbox' operator.\n"
+                        "You are Livia, AI assistant from ℓiⱴε agency. Search for the latest email in inbox using 'in:inbox' operator.\n"
                         "CRITICAL: Return only a 2-sentence summary in Portuguese.\n"
                         "Format: 'Último email de [sender] com assunto \"[subject]\". [Brief summary].'\n"
                         "NEVER return full email content - only essential information."
@@ -579,24 +517,13 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
         # Special handling for Everhour time tracking operations
         if mcp_config["server_label"] == "zapier-everhour":
             response = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
-                    "You are an Everhour time tracking specialist. Use the everhour_add_time tool and return a user-friendly message.\n\n"
-                    "🎯 **CRITICAL INSTRUCTIONS**:\n"
-                    "1. **Use everhour_add_time tool** with exact parameters from user message\n"
-                    "2. **Extract IDs directly**: Look for 'ev:xxxxxxxxxx' format in user message\n"
-                    "3. **Time format**: '1h', '2h', '30m' (never '1:00')\n"
-                    "4. **Date**: Use today's date in 'YYYY-MM-DD' format\n"
-                    "5. **Return user-friendly message** based on the tool results\n\n"
-                    "📋 **Response Format**:\n"
-                    "If SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_id] em [date]'\n"
-                    "If ERROR: '❌ Erro ao adicionar tempo: [error details]'\n\n"
-                    "✅ **EXAMPLE**:\n"
-                    "User: 'adicionar 2h na task ev:273393148295192 no projeto ev:273391483277215'\n"
-                    "1. Call: everhour_add_time(task_id='ev:273393148295192', project_id='ev:273391483277215', time='2h', date='2025-01-05', comment='Time tracking')\n"
-                    "2. Return: '✅ Tempo adicionado com sucesso! ⏰ 2h na task ev:273393148295192 em 2025-01-05'\n\n"
-                    "🎯 **GOAL**: Use MCP tool and return clear, friendly message in Portuguese!"
+                    "You are Livia, AI assistant from ℓiⱴε agency. Use everhour_add_time tool with exact parameters.\n"
+                    "Extract ev:xxxxxxxxxx IDs from message. Time format: 1h, 2h, 30m. Use today's date YYYY-MM-DD.\n"
+                    "SUCCESS: 'Tempo adicionado! [time] na task [task_id]'\n"
+                    "ERROR: 'Erro: [details]'"
                 ),
 
                 tools=[
@@ -616,36 +543,24 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
         elif mcp_config["server_label"] == "zapier-gcalendar":
             # Special handling for Google Calendar with consistent date parameters
             response = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
-                    "You are a Google Calendar specialist. Use the available Google Calendar tools to search and manage events.\n\n"
-                    "🗓️ **CALENDAR SEARCH STRATEGY**:\n"
-                    "1. **CRITICAL: Today is June 5, 2025**: Use 2025-06-05 as reference for 'today'\n"
-                    "2. **Default time range**: Search for events from today to next 7 days\n"
-                    "3. **Be specific with dates**: Always include start_date and end_date parameters\n"
-                    "4. **Timezone**: Use 'America/Sao_Paulo' timezone\n\n"
-                    "📋 **SEARCH EXAMPLES**:\n"
-                    "- For today's events: start_date='2025-06-05', end_date='2025-06-05'\n"
-                    "- For this week: start_date='2025-06-05', end_date='2025-06-12'\n"
-                    "- For next events: start_date='2025-06-05', end_date='2025-06-19'\n"
-                    "- For future events: start_date='2025-06-06', end_date='2025-06-30'\n\n"
-                    "📅 **RESPONSE FORMAT** (Portuguese):\n"
+                    "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
+                    "🗓️ **CRITICAL: Today is June 5, 2025**: Use 2025-06-05 as reference for 'today'\n"
+                    "📅 **Search Strategy**:\n"
+                    "- Try these tools in order: gcalendar_find_events, gcalendar_search_events, google_calendar_find_events\n"
+                    "- Use start_date and end_date parameters in YYYY-MM-DD format\n"
+                    "- Default range: today to next 7 days (2025-06-05 to 2025-06-12)\n"
+                    "- Timezone: America/Sao_Paulo\n"
+                    "- If no events found, try broader date range (2025-06-01 to 2025-06-30)\n\n"
+                    "📋 **Response Format** (Portuguese):\n"
                     "📅 **Eventos no Google Calendar:**\n"
                     "1. **[Nome do Evento]**\n"
                     "   - 📅 Data: [data]\n"
                     "   - ⏰ Horário: [hora início] às [hora fim]\n"
-                    "   - 🔗 Link: [link se disponível]\n"
-                    "   - 📹 Meet: [link meet se disponível]\n\n"
-                    "⚠️ **CRITICAL INSTRUCTIONS**:\n"
-                    "- TODAY IS JUNE 5, 2025 (2025-06-05) - NOT JANUARY!\n"
-                    "- Always search with explicit date ranges in JUNE 2025\n"
-                    "- Use gcalendar_find_events tool with start_date and end_date\n"
-                    "- If no events found, try broader date range in JUNE 2025\n"
-                    "- Always mention the CORRECT date range searched\n"
-                    "- Format times in São Paulo timezone\n"
-                    "- NEVER use January dates - we are in JUNE 2025!\n\n"
-                    "🎯 **GOAL**: Find and display calendar events for JUNE 2025 with correct dates."
+                    "   - 🔗 Link: [link se disponível]\n\n"
+                    "⚠️ **IMPORTANT**: Always search with explicit date ranges in JUNE 2025!"
                 ),
                 tools=[
                     {
@@ -666,7 +581,7 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
                 model="gpt-4o-mini",
                 input=input_data,
                 instructions=(
-                    "You are a Gmail specialist. Use the available Gmail tools to search and read emails.\n\n"
+                    "You are Livia, AI assistant from ℓiⱴε agency. Use Gmail tools to search and read emails.\n\n"
                     "🔍 **STEP-BY-STEP APPROACH**:\n"
                     "1. **First**: Use gmail_search_emails tool with search string 'in:inbox'\n"
                     "2. **Then**: Use gmail_get_email tool to read the first email from results\n"
@@ -705,34 +620,12 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
         elif mcp_config["server_label"] == "zapier-slack":
             # Special handling for Slack with message search and channel operations
             response = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
-                    "You are a Slack specialist. Use the available Slack tools to search messages and manage channels.\n\n"
-                    "💬 **SLACK SEARCH STRATEGY**:\n"
-                    "1. **For channel messages**: Use slack_find_message tool with search query\n"
-                    "2. **Search operators**: Use 'in:channel-name' to search in specific channels\n"
-                    "3. **Sort by timestamp**: Always sort by 'timestamp' in descending order for latest messages\n"
-                    "4. **Channel names**: Use exact channel names like 'inovação' or 'inovacao'\n\n"
-                    "🔍 **SEARCH EXAMPLES**:\n"
-                    "- For channel messages: 'in:inovação' or 'in:inovacao'\n"
-                    "- For recent messages: 'in:channel-name' (automatically sorted by timestamp desc)\n"
-                    "- For specific content: 'in:channel-name keyword'\n\n"
-                    "📋 **RESPONSE FORMAT** (Portuguese):\n"
-                    "💬 **Últimas Mensagens do Canal [channel-name]:**\n\n"
-                    "**[User Name]** - [timestamp]\n"
-                    "📝 [message content]\n"
-                    "🔗 [permalink if available]\n\n"
-                    "**Resumo:** [Brief summary of the latest messages and main topics discussed]\n\n"
-                    "⚠️ **CRITICAL INSTRUCTIONS**:\n"
-                    "- ALWAYS use slack_find_message tool first\n"
-                    "- Use search query 'in:channel-name' format\n"
-                    "- Sort by 'timestamp' in 'desc' order for latest messages\n"
-                    "- If channel not found, try variations like 'inovacao' vs 'inovação'\n"
-                    "- Provide message content and user information\n"
-                    "- Include timestamps and permalinks when available\n"
-                    "- Summarize the main topics or themes from recent messages\n\n"
-                    "🎯 **GOAL**: Find and summarize recent Slack messages from the specified channel."
+                    "You are Livia, AI assistant from ℓiⱴε agency. Use slack_find_message with 'in:channel-name' format.\n"
+                    "Sort by timestamp desc. Try 'inovacao' or 'inovação' variations.\n"
+                    "Return: user, timestamp, message content, permalink, summary in Portuguese."
                 ),
                 tools=[
                     {
@@ -749,29 +642,12 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
         else:
             # Regular MCP processing for other services (Asana, Google Drive, etc.)
             response = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
-                    f"You are an intelligent assistant with access to {mcp_config['name']} via MCP tools. "
-                    "Follow these guidelines for optimal performance:\n\n"
-                    "🔍 **SEARCH STRATEGY**:\n"
-                    "1. **Sequential Search**: For hierarchical data (workspace → project → task):\n"
-                    "   - Step 1: Search for workspace/organization by name\n"
-                    "   - Step 2: Use workspace result to search for project\n"
-                    "   - Step 3: Use project result to search for specific task\n"
-                    "   - Example: Find workspace 'INOVAÇÃO' → Find project 'Inovação' → Find task 'Terminar Livia 2.0'\n\n"
-                    "2. **Limit Results**: Return only 4 results at a time, ask user if they want more\n"
-                    "3. **Be Specific**: Try exact names first, then partial matches if needed\n\n"
-                    "📋 **RESPONSE REQUIREMENTS**:\n"
-                    "- **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses\n"
-                    "- Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'\n"
-                    "- This enables future operations using these exact IDs\n"
-                    "- Return clear, user-friendly messages in Portuguese\n\n"
-                    "⚡ **EFFICIENCY TIPS**:\n"
-                    "- Use exact IDs when available from conversation history\n"
-                    "- Make multiple MCP calls as needed to complete tasks\n"
-                    "- If essential info is missing (size, color, etc.), ask follow-up questions first\n\n"
-                    "🎯 **GOAL**: Provide accurate, actionable results with all necessary IDs and details."
+                    f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access. Sequential search: workspace→project→task.\n"
+                    "Always include ALL IDs/numbers from responses. Limit 4 results. Portuguese responses.\n"
+                    "Example: 'Found project Inovação (ev:123) with task Name (ev:456)'"
                 ),
                 tools=[
                     {
@@ -806,7 +682,7 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
                     model="gpt-4o-mini",
                     input="Busque apenas o último email recebido na caixa de entrada e faça um resumo muito breve",
                     instructions=(
-                        "You are a Gmail assistant. Search for the latest email in inbox using 'in:inbox' operator.\n"
+                        "You are Livia, AI assistant from ℓiⱴε agency. Search for the latest email in inbox using 'in:inbox' operator.\n"
                         "CRITICAL: Return only a 2-sentence summary in Portuguese.\n"
                         "Format: 'Último email de [sender] com assunto \"[subject]\". [Brief summary].'\n"
                         "NEVER return full email content - only essential information."
@@ -850,9 +726,13 @@ def detect_zapier_mcp_needed(message: str) -> Optional[str]:
     for mcp_key in priority_order:
         if mcp_key in ZAPIER_MCPS:
             mcp_config = ZAPIER_MCPS[mcp_key]
-            if any(keyword in message_lower for keyword in mcp_config["keywords"]):
-                logger.info(f"Detected {mcp_config['name']} keywords in message: {[kw for kw in mcp_config['keywords'] if kw in message_lower]}")
+            detected_keywords = [kw for kw in mcp_config['keywords'] if kw in message_lower]
+            if detected_keywords:
+                logger.info(f"🎯 Detected {mcp_config['name']} keywords in message: {detected_keywords}")
+                logger.info(f"🔀 Routing to MCP: {mcp_key}")
                 return mcp_key
+            else:
+                logger.debug(f"❌ No {mcp_config['name']} keywords found in message")
 
     return None
 
