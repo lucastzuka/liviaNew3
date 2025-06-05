@@ -14,7 +14,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 # OpenAI Agents SDK components
-from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers
+from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers, FileSearchTool
 from agents.mcp import MCPServerStdio
 
 # Load environment variables from .env file
@@ -134,6 +134,13 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
 
     web_search_tool = WebSearchTool(search_context_size="medium")
 
+    # File Search Tool configuration
+    file_search_tool = FileSearchTool(
+        vector_store_ids=["vs_683e3a1ac4808191ae5e6fe24392e609"],
+        max_num_results=5,
+        include_search_results=True
+    )
+
     mcp_servers = [slack_server]
     server_descriptions = [f"'{slack_server.name}'"]
 
@@ -166,6 +173,7 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
             "IMPORTANT: You should ONLY respond in threads where the bot was mentioned in the FIRST message of the thread. "
             "You have access to multiple powerful tools:\n\n"
             "🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers\n"
+            "📄 **File Search Tool**: Search through uploaded documents and files in your knowledge base for relevant information\n"
             "👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs\n"
             f"{zapier_tools_description}"
             "📱 **Slack Tools** (via MCP Server):\n"
@@ -186,6 +194,7 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
             "4. **Multiple Tool Calls**: Don't hesitate to make multiple MCP calls to complete a task properly\n\n"
             "**Guidelines:**\n"
             "- Use web search when you need current information, recent news, or facts you don't know\n"
+            "- Use file search when users ask about documents, files, or information from your knowledge base\n"
             "- When users upload images or send image URLs, analyze them and provide detailed descriptions\n"
             "- For images, describe what you see including objects, people, text, colors, and context\n"
             "- For Google Drive searches: try multiple search strategies if first attempt fails\n"
@@ -195,6 +204,7 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
             "- Consider that file names may have suffixes like _BR2024, _2024, etc.\n"
             "- Always offer to try broader or more specific search terms when initial search fails\n"
             "- When user says 'pasta' but means 'arquivo', correct and search for files instead\n"
+            "- For document-related queries, try file search first before other tools\n"
             "- 🔄 **Smart Routing**: Requests are automatically routed to appropriate Zapier MCPs\n"
             "- 🎯 **Keyword Detection**: System detects intent and uses the right integration\n"
             "- 🚨 SECURITY: NEVER use slack_post_message - responses are handled automatically\n"
@@ -205,7 +215,7 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
             "- You can help with general questions, provide information, and assist with Slack-related tasks"
         ),
         model="gpt-4.1-mini",
-        tools=[web_search_tool],
+        tools=[web_search_tool, file_search_tool],
         mcp_servers=mcp_servers,
     )
     servers_info = " and ".join(server_descriptions)

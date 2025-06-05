@@ -1,8 +1,31 @@
 # 📝 Changelog - Livia Slack Chatbot
 
-## 🚀 v2.1.0 - STREAMING EM TEMPO REAL (2025-01-05)
+## 🚀 v2.2.0 - FILE SEARCH + STREAMING (2025-01-05)
 
-### ✨ NOVA FUNCIONALIDADE REVOLUCIONÁRIA: STREAMING
+### ✨ NOVA FUNCIONALIDADE: FILE SEARCH TOOL
+
+#### 📄 **Busca Semântica em Documentos**
+- ✅ **FileSearchTool implementado**: Usando OpenAI Agents SDK nativo
+- ✅ **Vector Store integrado**: vs_683e3a1ac4808191ae5e6fe24392e609
+- ✅ **Citações automáticas**: Sempre mostra fonte dos dados
+- ✅ **Streaming funcionando**: Respostas de documentos em tempo real
+
+#### 🎯 **Funcionalidades do File Search**
+- ✅ Busca semântica inteligente (não apenas palavras-chave)
+- ✅ Acesso a Electrolux_DigitalGuidelines.txt e outros documentos
+- ✅ Respostas precisas com citação da fonte
+- ✅ Integração perfeita com streaming
+- ✅ Configuração: max_num_results=5, include_search_results=True
+
+#### 🎬 **Exemplo Testado com Sucesso**
+```
+👤 Pergunta: "qual o hex da cor principal da electrolux?"
+🤖 Resposta: "A cor principal da Electrolux, chamada Electrolux Blue,
+            tem o código hexadecimal #011E41...
+            Fonte: Electrolux_DigitalGuidelines.txt"
+```
+
+### ✨ FUNCIONALIDADE ANTERIOR: STREAMING EM TEMPO REAL
 
 #### 🎯 **Implementação Completa de Streaming**
 - ✅ **OpenAI Responses API Streaming**: Para todos os MCPs Zapier
@@ -32,6 +55,7 @@
 #### 📊 **Suporte Completo**
 - ✅ **Respostas Simples**: Conversas básicas com streaming
 - ✅ **Web Search**: Busca na internet com streaming
+- ✅ **File Search**: Busca em documentos com streaming e citações
 - ✅ **MCPs Zapier**: Google Drive, Gmail, Asana, Everhour, etc.
 - ✅ **Análise de Imagens**: Visão computacional com streaming
 - ✅ **Tool Calls**: Todas as ferramentas com streaming
@@ -39,6 +63,7 @@
 #### 🎉 **Resultados dos Testes**
 - ✅ Streaming funcionando para respostas simples
 - ✅ Streaming funcionando para Google Drive MCP
+- ✅ **File Search funcionando perfeitamente** com citações
 - ✅ Atualizações progressivas no Slack
 - ✅ Rate limiting funcionando corretamente
 - ✅ Fallbacks robustos implementados

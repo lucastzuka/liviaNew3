@@ -8,6 +8,7 @@ Livia é um chatbot inteligente para Slack que usa **OpenAI Agents SDK** e **API
 - **⚡ STREAMING EM TEMPO REAL**: Respostas aparecem progressivamente conforme são geradas pela IA
 - **🛠️ Ferramentas Avançadas**:
   - 🔍 **Web Search Tool** - Busca informações atuais na internet, notícias e fatos
+  - 📄 **File Search Tool** - Busca em documentos e base de conhecimento com citações
   - 👁️ **Image Vision** - Análise de imagens enviadas via Slack ou URLs
   - 📋 **Asana Integration** - Gerenciamento de projetos e tarefas via MCP
   - ⚡ **Zapier Automation** - Integração com Google Drive, Gmail e outras ferramentas
@@ -223,12 +224,23 @@ python server.py
    - **Formatos suportados**: PNG, JPEG, WEBP, GIF (não animado)
    - Livia analisará automaticamente e descreverá o conteúdo
 
-5. **Use comandos naturais com STREAMING**:
+5. **Busque em documentos** da base de conhecimento:
+   ```
+   @Livia Qual o hex da cor principal da Electrolux?
+   @Livia Procure informações sobre guidelines de marca
+   ```
+
+6. **Use comandos naturais com STREAMING**:
 
    **🔍 Busca na Web (com streaming):**
    - "Pesquise informações sobre IA na internet"
    - "Qual é a cotação do dólar hoje?"
    - "Busque notícias recentes sobre tecnologia"
+
+   **📄 File Search (com streaming):**
+   - "Qual o hex da cor principal da Electrolux?"
+   - "Procure informações sobre guidelines de marca"
+   - "Busque dados sobre políticas da empresa"
 
    **👁️ Análise de Imagens (com streaming):**
    - "Analise esta imagem" (com upload de imagem)
@@ -248,7 +260,7 @@ python server.py
    - **Google Analytics**: "Mostrar dados de tráfego da última semana"
    - **Google Slides**: "Criar apresentação sobre resultados do trimestre"
 
-   **🚀 TODAS as respostas aparecem em tempo real com streaming!**
+   **🚀 TODAS as respostas aparecem em tempo real com streaming e citações de fonte!**
 
 ### 6. Análise de Imagens com IA
 
@@ -299,14 +311,15 @@ liviaNEW3/
 ```
 
 ### 🔧 Componentes Principais
-- **agent.py**: Define a Livia com sistema modular de MCPs do Zapier + **STREAMING**
+- **agent.py**: Define a Livia com sistema modular de MCPs do Zapier + **STREAMING** + **FILE SEARCH**
 - **server.py**: Servidor Socket Mode do Slack com proteção anti-loop + **STREAMING**
 - **tools/**: Módulo de ferramentas (WebSearch, ImageProcessor)
-- **OpenAI Agents SDK**: Orquestração de agentes inteligentes com **streaming nativo**
+- **OpenAI Agents SDK**: Orquestração de agentes inteligentes com **streaming nativo** + **FileSearchTool**
 - **MCP Local**: Comunicação com APIs locais (Slack) com **streaming**
 - **Zapier Remote MCPs**: Sistema modular de automação via API Responses com **streaming**
 - **API Responses**: Nova API da OpenAI para agentes e automação com **streaming**
 - **🚀 STREAMING ENGINE**: Sistema de atualizações em tempo real no Slack
+- **📄 FILE SEARCH**: Busca semântica em base de conhecimento com citações
 
 ### 🏗️ Arquitetura Modular dos MCPs
 
@@ -367,9 +380,53 @@ A Livia agora oferece **respostas em tempo real** similar ao ChatGPT web interfa
 
 - ✅ **Respostas Simples**: Streaming para conversas básicas
 - ✅ **Web Search**: Busca na internet com streaming
+- ✅ **File Search**: Busca em documentos com streaming e citações
 - ✅ **MCPs Zapier**: Google Drive, Gmail, Asana, etc. com streaming
 - ✅ **Análise de Imagens**: Visão computacional com streaming
 - ✅ **Tool Calls**: Todas as ferramentas com streaming
+
+## 📄 FILE SEARCH - Base de Conhecimento
+
+### ✨ Busca Semântica em Documentos
+
+A Livia tem acesso a uma **base de conhecimento** através do File Search Tool da OpenAI!
+
+#### 🎯 Como Funciona:
+
+1. **Busca Semântica**: Encontra informações relevantes mesmo sem palavras-chave exatas
+2. **Citações Automáticas**: Sempre mostra a fonte dos dados
+3. **Streaming**: Respostas aparecem em tempo real
+4. **Precisão**: Dados extraídos diretamente dos documentos
+
+#### 📚 Documentos Disponíveis:
+
+- **Electrolux_DigitalGuidelines.txt**: Guidelines de marca, cores, logos
+- **Políticas da Empresa**: Documentos internos e procedimentos
+- **Manuais Técnicos**: Especificações e instruções
+- **Base de Conhecimento**: Informações corporativas
+
+#### 🎬 Exemplo de Uso:
+
+```
+👤 Usuário: @Livia Qual o hex da cor principal da Electrolux?
+
+🤖 Livia: A cor principal da Electrolux, chamada Electrolux Blue,
+         tem o código hexadecimal #011E41.
+
+         Essa cor faz parte da paleta de cores primária da marca...
+
+         Fonte: Electrolux_DigitalGuidelines.txt
+```
+
+#### ⚡ Vantagens:
+
+- ✅ **Informações Precisas**: Dados extraídos diretamente dos documentos
+- ✅ **Sempre Atualizado**: Base de conhecimento sincronizada
+- ✅ **Citações Confiáveis**: Sempre mostra a fonte
+- ✅ **Busca Inteligente**: Encontra informações relacionadas
+- ✅ **Streaming**: Respostas em tempo real
+
+---
 
 ## 🚀 Adicionando Novos MCPs do Zapier
 
