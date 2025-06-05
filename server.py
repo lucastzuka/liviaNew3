@@ -15,6 +15,7 @@ import ssl
 import certifi # For SSL certificate handling
 from agent import (
     create_slack_mcp_server,
+    create_asana_mcp_server,
     create_agent,
     process_message,
     MCPServerStdio,
@@ -28,8 +29,10 @@ logger = logging.getLogger(__name__)
 
 # --- Global Variables ---
 slack_mcp_server: MCPServerStdio | None = None
+asana_mcp_server = None
 agent = None
 agent_lock = asyncio.Lock()
+processed_messages = set()  # Track processed message timestamps to avoid duplicates
 
 # --- Server Class ---
 class SlackSocketModeServer:
@@ -371,7 +374,7 @@ class SlackSocketModeServer:
 # --- Agent Initialization and Cleanup Functions ---
 async def initialize_agent():
     """Initializes the global agent and MCP server instances."""
-    global slack_mcp_server, agent
+    global slack_mcp_server, asana_mcp_server, agent
 
     logger.info("Initializing Livia Slack MCP Server and Agent...")
 
@@ -380,8 +383,19 @@ async def initialize_agent():
         slack_mcp_server = await create_slack_mcp_server()
         await slack_mcp_server.__aenter__()  # Start the MCP server context
 
-        # Create the agent with the MCP server
-        agent = await create_agent(slack_mcp_server)
+        # Try to create and start the Asana MCP server (optional)
+        asana_mcp_server = None
+        try:
+            logger.info("Initializing Asana MCP Server...")
+            asana_mcp_server = await create_asana_mcp_server()
+            await asana_mcp_server.__aenter__()  # Start the Asana MCP server context
+            logger.info("Asana MCP Server successfully initialized.")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Asana MCP Server (optional): {e}")
+            asana_mcp_server = None
+
+        # Create the agent with the MCP servers
+        agent = await create_agent(slack_mcp_server, asana_mcp_server)
 
         logger.info("Livia agent successfully initialized.")
 
@@ -392,7 +406,7 @@ async def initialize_agent():
 
 async def cleanup_agent():
     """Cleans up the MCP server resources."""
-    global slack_mcp_server, agent
+    global slack_mcp_server, asana_mcp_server, agent
 
     logger.info("Cleaning up Livia agent resources...")
 
@@ -401,9 +415,18 @@ async def cleanup_agent():
             await slack_mcp_server.__aexit__(None, None, None)
             logger.info("Slack MCP server cleaned up.")
         except Exception as e:
-            logger.error(f"Error cleaning up MCP server: {e}", exc_info=True)
+            logger.error(f"Error cleaning up Slack MCP server: {e}", exc_info=True)
         finally:
             slack_mcp_server = None
+
+    if asana_mcp_server:
+        try:
+            await asana_mcp_server.__aexit__(None, None, None)
+            logger.info("Asana MCP server cleaned up.")
+        except Exception as e:
+            logger.error(f"Error cleaning up Asana MCP server: {e}", exc_info=True)
+        finally:
+            asana_mcp_server = None
 
     agent = None
     logger.info("Agent cleanup completed.")

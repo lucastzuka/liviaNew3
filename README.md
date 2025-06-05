@@ -8,6 +8,7 @@ Livia é um chatbot inteligente para Slack que usa OpenAI Agents SDK e API Respo
 - **Ferramentas Avançadas**:
   - 🔍 **Web Search Tool** - Busca informações atuais na internet, notícias e fatos
   - 👁️ **Image Vision** - Análise de imagens enviadas via Slack ou URLs
+  - 📋 **Asana Integration** - Gerenciamento de projetos e tarefas via MCP
   - 🔧 **MCP Tools** - Ferramentas do Model Context Protocol para Slack
 - **OpenAI Agents SDK**: Usa a mais recente tecnologia de agentes da OpenAI
 - **API Responses**: Utiliza a nova API Responses da OpenAI (não Chat Completions)
@@ -110,6 +111,25 @@ Preencha com:
 - `SLACK_TEAM_ID`: ID do workspace (T...)
 - `OPENAI_API_KEY`: Sua chave da API OpenAI
 
+**Nota**: A integração com Asana está habilitada por padrão.
+
+### 5. Integração com Asana
+
+A Livia vem com integração ao Asana habilitada por padrão via MCP (Model Context Protocol).
+
+**Funcionalidades Disponíveis**:
+- ✅ Criar e gerenciar tarefas
+- ✅ Listar projetos e workspaces
+- ✅ Atualizar status de tarefas
+- ✅ Buscar tarefas e projetos
+- ✅ Gerenciar colaboração em equipe
+
+**Exemplos de Comandos**:
+- "Crie uma tarefa no Asana: Revisar documentação"
+- "Liste meus projetos no Asana"
+- "Qual o status das tarefas do projeto Marketing?"
+- "Atribua a tarefa X para João"
+
 ## Uso
 
 ### Executar o Bot
@@ -139,6 +159,9 @@ python server.py
    - "Busque notícias recentes sobre tecnologia"
    - "Analise esta imagem" (com upload de imagem)
    - "O que você vê nesta foto?" (com link de imagem)
+   - "Crie uma tarefa no Asana: Revisar documentação"
+   - "Liste meus projetos no Asana"
+   - "Qual o status das tarefas do projeto X?"
 
 ### 6. Análise de Imagens com IA
 

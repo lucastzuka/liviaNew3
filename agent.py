@@ -30,6 +30,37 @@ logger = logging.getLogger(__name__)
 # logging.getLogger("openai.agents").setLevel(logging.DEBUG)
 
 
+async def create_asana_mcp_server() -> MCPServerStdio:
+    """Creates and returns an Asana MCP Server instance using @roychri/mcp-server-asana with token authentication."""
+
+    logger.info("Creating Asana MCP Server connection with token authentication...")
+
+    # Use the @roychri/mcp-server-asana package which accepts direct token authentication
+    # This avoids OAuth issues and "unusual activity" blocks
+    asana_command = "npx"
+    asana_args = ["-y", "@roychri/mcp-server-asana"]
+
+    # Your Asana access token
+    asana_token = "2/1203422181648476/1210469533636732:cb4cc6cfe7871e7d0363b5e2061765d3"
+
+    logger.info(f"Starting Asana MCP Server with command: {asana_command} {' '.join(asana_args)}")
+
+    # Initialize the Asana MCP Server connection via Standard I/O
+    asana_server = MCPServerStdio(
+        name="Asana MCP Server",
+        params={
+            "command": asana_command,
+            "args": asana_args,
+            "env": {
+                # Pass the token directly as environment variable
+                **os.environ,
+                "ASANA_ACCESS_TOKEN": asana_token
+            },
+        },
+    )
+    logger.info("Asana MCP Server instance created with token authentication.")
+    return asana_server
+
 async def create_slack_mcp_server() -> MCPServerStdio:
     """Creates and returns a Slack MCP Server instance using MCPServerStdio."""
 
@@ -63,7 +94,7 @@ async def create_slack_mcp_server() -> MCPServerStdio:
     return slack_server
 
 
-async def create_agent(slack_server: MCPServerStdio) -> Agent:
+async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdio = None) -> Agent:
     """Creates and returns Livia, an OpenAI Agent configured to use the Slack MCP server and tools."""
 
     logger.info("Creating Livia - the Slack Chatbot Agent...")
@@ -72,6 +103,44 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
     web_search_tool = WebSearchTool(
         search_context_size="medium"  # Options: "low", "medium", "high"
     )
+
+    # Prepare MCP servers list
+    mcp_servers = [slack_server]
+    server_descriptions = [f"'{slack_server.name}'"]
+
+    # Add Asana server if available
+    if asana_server:
+        mcp_servers.append(asana_server)
+        server_descriptions.append(f"'{asana_server.name}'")
+
+    # Build instructions with available tools
+    asana_tools_description = ""
+    if asana_server:
+        asana_tools_description = (
+            "📋 **Asana Tools** (via MCP Server):\n"
+            "  - List workspaces and projects\n"
+            "  - Search tasks with proper filters (always include text, completed status, or project filters)\n"
+            "  - Get specific tasks by ID\n"
+            "  - Create and manage tasks\n"
+            "  - Update task status and assignments\n"
+            "  - Get project sections and task counts\n"
+            "  - Manage team collaboration\n\n"
+            "**Important Asana Search Guidelines:**\n"
+            "  - ALWAYS use workspace ID '1200537647127763' (never use workspace name)\n"
+            "  - ALWAYS use asana_search_projects first to find relevant projects and get their GIDs\n"
+            "  - When searching tasks, ALWAYS include completed=false AND text='' (empty string is valid)\n"
+            "  - Use specific project GIDs (not names) when searching tasks\n"
+            "  - For project-specific tasks, use 'projects' filter with project GID + completed + text filters\n"
+            "  - For user tasks, search within specific projects rather than workspace-wide\n"
+            "  - CRITICAL: API requires completed + text filters even when using projects filter\n"
+            "  - Known workspace: 'ℓiⱴε - The Culture-Driven Agency' (ID: 1200537647127763)\n"
+            "  - User lucas.vieira@live.tt has ID: 1203422181694687\n"
+            "  - WORKFLOW: 1) Find project GID → 2) Search tasks using project GID + filters\n"
+            "  - IMPORTANT: Project names have prefixes like '1. ELECTROLUX (BR)', use regex patterns like '.*ELECTROLUX.*BR.*'\n"
+            "  - CORRECT EXAMPLE: asana_search_tasks(workspace='1200537647127763', projects=['1204965509777978'], completed=false, text='', limit=5)\n"
+            "  - ALTERNATIVE: Use asana_get_project(project_id='1204965509777978') to get project details first\n"
+            "  - NEVER use projects_any - always use projects=['project_id'] as array\n"
+        )
 
     agent = Agent(
         name="Livia",
@@ -82,6 +151,7 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
             "You have access to multiple powerful tools:\n\n"
             "🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers\n"
             "👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs\n"
+            f"{asana_tools_description}"
             "📱 **Slack Tools** (via MCP Server):\n"
             "  - List channels and users\n"
             "  - Post messages and reply to threads\n"
@@ -91,6 +161,13 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
             "- Use web search when you need current information, recent news, or facts you don't know\n"
             "- When users upload images or send image URLs, analyze them and provide detailed descriptions\n"
             "- For images, describe what you see including objects, people, text, colors, and context\n"
+            f"{'- For Asana: ALWAYS use workspace ID 1200537647127763, NEVER use workspace name' if asana_server else ''}\n"
+            f"{'- For Asana workflow: 1) Search projects to get GID → 2) Search tasks using project GID + MANDATORY filters' if asana_server else ''}\n"
+            f"{'- When searching tasks: ALWAYS include completed=false AND text=\"\" (empty text is valid filter)' if asana_server else ''}\n"
+            f"{'- MANDATORY: asana_search_tasks requires completed + text filters, even if text is empty string' if asana_server else ''}\n"
+            f"{'- When users ask for \"my tasks\", use assignee filter with user ID 1203422181694687' if asana_server else ''}\n"
+            f"{'- NEVER use projects_any or assignee_any - use projects=[\"project_id\"] as array instead' if asana_server else ''}\n"
+            f"{'- CRITICAL: projects parameter must be array like [\"1204965509777978\"], not string' if asana_server else ''}\n"
             "- Be helpful, concise, and professional in your responses\n"
             "- Ask for clarification if needed\n"
             "- Always cite sources when providing information from web searches\n"
@@ -101,9 +178,10 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
         # List of tools the agent can use
         tools=[web_search_tool],
         # List of MCP servers the agent can use
-        mcp_servers=[slack_server],
+        mcp_servers=mcp_servers,
     )
-    logger.info(f"Agent '{agent.name}' created with WebSearchTool and access to '{slack_server.name}'.")
+    servers_info = " and ".join(server_descriptions)
+    logger.info(f"Agent '{agent.name}' created with WebSearchTool and access to {servers_info}.")
     return agent
 
 
