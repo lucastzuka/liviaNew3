@@ -127,14 +127,11 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
         )
 
     zapier_tools_description = (
-        "⚡ **Zapier Automation Tools** (ATIVO via Remote MCP):\n"
+        "⚡ **Zapier Google Drive Tools** (ATIVO via Remote MCP):\n"
         "  - ✅ Google Drive: buscar, listar, criar e gerenciar arquivos e pastas\n"
-        "  - ✅ Gmail: enviar emails e gerenciar mensagens\n"
-        "**Comandos Zapier:**\n"
-        "  - 'buscar arquivos no drive', 'listar documentos', 'criar pasta'\n"
-        "  - 'procurar pasta', 'encontrar arquivo', 'buscar no google drive'\n"
-        "  - 'enviar email', 'criar página no notion', 'adicionar card no trello'\n"
-        "  - Use palavras-chave como 'drive', 'gmail', 'automation' para ativar\n"
+        "**Comandos Google Drive:**\n"
+        "  - 'buscar arquivo no drive', 'procurar pasta no google drive'\n"
+        "  - 'encontrar documento', 'listar arquivos do drive'\n"
         "**Dicas para busca no Google Drive:**\n"
         "  - Para arquivos: use 'buscar arquivo [nome]' ou 'encontrar arquivo [nome]'\n"
         "  - Para pastas: use 'procurar pasta [nome]' ou 'buscar pasta [nome]'\n"
@@ -171,6 +168,10 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "- Consider that file names may have suffixes like _BR2024, _2024, etc.\n"
             "- Always offer to try broader or more specific search terms when initial search fails\n"
             "- When user says 'pasta' but means 'arquivo', correct and search for files instead\n"
+            "- CRITICAL: For Asana tasks/projects, ALWAYS use Asana MCP tools, NOT Zapier\n"
+            "- CRITICAL: For Google Drive files/folders, use Zapier Remote MCP\n"
+            "- If user mentions 'asana', 'tarefa', 'projeto', use Asana MCP tools\n"
+            "- If user mentions 'drive', 'arquivo', 'pasta', use Zapier Google Drive tools\n"
             f"{'- For Asana: ALWAYS use workspace ID 1200537647127763, NEVER use workspace name' if asana_server else ''}\n"
             f"{'- For Asana workflow: 1) Search projects to get GID → 2) Search tasks using project GID + MANDATORY filters' if asana_server else ''}\n"
             f"{'- When searching tasks: ALWAYS include completed=false AND text=\"\" (empty text is valid filter)' if asana_server else ''}\n"
@@ -233,11 +234,16 @@ async def process_message_with_zapier(message: str, image_urls: Optional[List[st
 async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None) -> str:
     """Runs the agent with the given message and optional image URLs, returns the final output."""
 
-    zapier_keywords = ["zapier", "google drive", "gmail", "notion", "trello", "automation", "workflow", "integrate", "drive", "arquivo", "pasta", "documento"]
-    needs_zapier = any(keyword in message.lower() for keyword in zapier_keywords)
+    # Check for Asana keywords first (higher priority)
+    asana_keywords = ["asana", "projeto", "tarefa", "task", "project", "workspace", "pauta inovação"]
+    needs_asana = any(keyword in message.lower() for keyword in asana_keywords)
+
+    # Check for Google Drive/Zapier keywords (only if not Asana)
+    zapier_keywords = ["google drive", "drive", "arquivo", "pasta", "documento", "buscar arquivo", "procurar pasta", "listar documentos"]
+    needs_zapier = any(keyword in message.lower() for keyword in zapier_keywords) and not needs_asana
 
     if needs_zapier:
-        logger.info("Message requires Zapier tools, using Responses API with Remote MCP")
+        logger.info("Message requires Zapier Google Drive tools, using Responses API with Remote MCP")
         try:
             return await process_message_with_zapier(message, image_urls)
         except Exception as e:
