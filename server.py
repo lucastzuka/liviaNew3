@@ -13,6 +13,8 @@ from slack_sdk.web.async_client import AsyncWebClient
 # from slack_sdk.errors import SlackApiError  # Not used currently
 import ssl
 import certifi # For SSL certificate handling
+import aiohttp
+import base64
 from agent import (
     create_slack_mcp_server,
     create_asana_mcp_server,
@@ -76,15 +78,7 @@ class SlackSocketModeServer:
         # Set up event handlers
         self._setup_event_handlers()
 
-        # Add a simple test handler to see if we're receiving any events
-        @self.app.event("message")
-        async def test_message_handler(body, say):
-            logger.info(f"TEST: Received any message event: {body}")
 
-        @self.app.event("app_mention")
-        async def test_mention_handler(body, say):
-            logger.info(f"TEST: Received mention event: {body}")
-            await say("I received your mention!")
 
     # --- Thread History Fetching Method ---
     async def _fetch_thread_history(self, channel_id: str, thread_ts: str) -> Optional[str]:
@@ -112,7 +106,6 @@ class SlackSocketModeServer:
             for msg in messages:
                 user_id = msg.get("user", "Unknown")
                 text = msg.get("text", "")
-                timestamp = msg.get("ts", "")
 
                 # Get user info for better formatting
                 try:
@@ -220,8 +213,6 @@ class SlackSocketModeServer:
         try:
             if "files.slack.com" in image_url:
                 # For Slack images, we need to download and convert to base64
-                import aiohttp
-                import base64
 
                 headers = {
                     "Authorization": f"Bearer {os.environ.get('SLACK_BOT_TOKEN', '')}"
