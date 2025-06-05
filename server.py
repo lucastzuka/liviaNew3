@@ -33,6 +33,7 @@ asana_mcp_server = None
 agent = None
 agent_lock = asyncio.Lock()
 processed_messages = set()  # Track processed message timestamps to avoid duplicates
+bot_user_id = "U057233T98A"  # Your bot's user ID - prevent processing bot's own messages
 
 # --- Server Class ---
 class SlackSocketModeServer:
@@ -132,6 +133,14 @@ class SlackSocketModeServer:
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
             return
 
+        # CRITICAL: Additional check to prevent processing bot's own responses
+        if text and any(phrase in text.lower() for phrase in [
+            "encontrei o arquivo", "você pode acessá-lo", "estou à disposição",
+            "não consegui encontrar", "vou procurar", "aqui está"
+        ]):
+            logger.info("Detected bot's own response pattern, skipping processing")
+            return
+
         context_input = text
 
         # Use thread history as context if available
@@ -213,10 +222,23 @@ class SlackSocketModeServer:
             event = body.get("event", {})
             logger.info(f"Received message event: {event}")
 
-            # Ignore bot messages, empty text, or messages without subtype
-            if event.get("bot_id") or not event.get("text"):
-                logger.info("Ignoring bot message or empty text")
+            # CRITICAL: Ignore bot messages, empty text, or messages from the bot itself
+            if (event.get("bot_id") or
+                not event.get("text") or
+                event.get("user") == bot_user_id):
+                logger.info("Ignoring bot message, empty text, or message from bot itself")
                 return
+
+            # CRITICAL: Check if message was already processed to prevent loops
+            message_id = f"{event.get('channel')}_{event.get('ts')}"
+            if message_id in processed_messages:
+                logger.info(f"Message {message_id} already processed, skipping")
+                return
+            processed_messages.add(message_id)
+
+            # Clean old processed messages (keep only last 100)
+            if len(processed_messages) > 100:
+                processed_messages.clear()
 
             channel_id = event.get("channel")
             text = event.get("text", "").strip()
@@ -225,7 +247,6 @@ class SlackSocketModeServer:
             logger.info(f"Message: '{text}', Channel: {channel_id}, Thread: {thread_ts}")
 
             # Check if this is a mention in the message text (fallback detection)
-            bot_user_id = "U057233T98A"  # Your bot's user ID
             is_mention_in_text = f"<@{bot_user_id}>" in text
 
             # Process thread replies, direct messages, OR mentions in text
@@ -284,6 +305,18 @@ class SlackSocketModeServer:
             """Handle app mentions - start new threads or respond in existing ones."""
             event = body.get("event", {})
             logger.info(f"Received app mention event: {event}")
+
+            # CRITICAL: Ignore if message is from the bot itself
+            if event.get("user") == bot_user_id:
+                logger.info("Ignoring app mention from bot itself")
+                return
+
+            # CRITICAL: Check if mention was already processed to prevent loops
+            mention_id = f"mention_{event.get('channel')}_{event.get('ts')}"
+            if mention_id in processed_messages:
+                logger.info(f"Mention {mention_id} already processed, skipping")
+                return
+            processed_messages.add(mention_id)
 
             channel_id = event.get("channel")
             text = event.get("text", "").strip()
