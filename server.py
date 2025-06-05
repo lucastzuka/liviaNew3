@@ -152,8 +152,19 @@ class SlackSocketModeServer:
         async with agent_lock: # Ensure only one request processed at a time
             try:
                 logger.info(f"Processing message via Livia agent...")
+
+                # Process image URLs if any
+                processed_image_urls = []
+                if image_urls:
+                    logger.info(f"Processing {len(image_urls)} images...")
+                    for img_url in image_urls:
+                        processed_url = await self._process_slack_image(img_url)
+                        if processed_url:
+                            processed_image_urls.append(processed_url)
+                    logger.info(f"Successfully processed {len(processed_image_urls)} images")
+
                 # Delegate processing to the agent with image support
-                response = await process_message(agent, context_input, image_urls)
+                response = await process_message(agent, context_input, processed_image_urls)
                 # Post the agent's response back to Slack
                 await say(text=str(response), channel=channel_id, thread_ts=thread_ts_for_reply)
                 logger.info("Livia responded successfully.")
@@ -169,18 +180,68 @@ class SlackSocketModeServer:
         files = event.get("files", [])
         for file in files:
             if file.get("mimetype", "").startswith("image/"):
-                # Use the private URL for uploaded images
+                # For Slack uploaded images, we need to use the URL with auth headers
                 if "url_private" in file:
-                    image_urls.append(file["url_private"])
+                    # Add auth header info to the URL for Slack images
+                    slack_image_url = f"{file['url_private']}?token={os.environ.get('SLACK_BOT_TOKEN', '')}"
+                    image_urls.append(slack_image_url)
+                    logger.info(f"Found uploaded image: {file.get('name', 'unknown')} - {file['url_private']}")
 
-        # Check for image URLs in text (basic URL detection)
+        # Check for image URLs in text (enhanced URL detection)
         text = event.get("text", "")
         import re
-        url_pattern = r'https?://[^\s]+\.(?:jpg|jpeg|png|gif|webp)'
-        found_urls = re.findall(url_pattern, text, re.IGNORECASE)
-        image_urls.extend(found_urls)
+
+        # Pattern for image URLs (more comprehensive)
+        url_patterns = [
+            r'https?://[^\s<>]+\.(?:jpg|jpeg|png|gif|webp|bmp|tiff)(?:\?[^\s<>]*)?',  # Direct image URLs
+            r'https?://[^\s<>]*(?:imgur|flickr|instagram|twitter|facebook)[^\s<>]*',   # Image hosting sites
+            r'https?://[^\s<>]*\.(?:com|org|net)/[^\s<>]*\.(?:jpg|jpeg|png|gif|webp)', # Images on websites
+        ]
+
+        for pattern in url_patterns:
+            found_urls = re.findall(pattern, text, re.IGNORECASE)
+            for url in found_urls:
+                # Clean up URL (remove trailing punctuation)
+                url = re.sub(r'[.,;!?]+$', '', url)
+                if url not in image_urls:
+                    image_urls.append(url)
+                    logger.info(f"Found image URL in text: {url}")
+
+        if image_urls:
+            logger.info(f"Total images found: {len(image_urls)}")
 
         return image_urls
+
+    async def _process_slack_image(self, image_url: str) -> Optional[str]:
+        """Process Slack private image URL to make it accessible."""
+        try:
+            if "files.slack.com" in image_url:
+                # For Slack images, we need to download and convert to base64
+                import aiohttp
+                import base64
+
+                headers = {
+                    "Authorization": f"Bearer {os.environ.get('SLACK_BOT_TOKEN', '')}"
+                }
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_url, headers=headers) as response:
+                        if response.status == 200:
+                            image_data = await response.read()
+                            # Convert to base64 data URL
+                            content_type = response.headers.get('content-type', 'image/jpeg')
+                            base64_image = base64.b64encode(image_data).decode('utf-8')
+                            return f"data:{content_type};base64,{base64_image}"
+                        else:
+                            logger.error(f"Failed to download Slack image: {response.status}")
+                            return None
+            else:
+                # For external URLs, return as-is
+                return image_url
+
+        except Exception as e:
+            logger.error(f"Error processing image URL {image_url}: {e}")
+            return None
 
     async def _is_thread_started_with_mention(self, channel_id: str, thread_ts: str) -> bool:
         """Check if a thread was started with a mention to Livia."""
