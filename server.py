@@ -25,6 +25,7 @@ from agent import (
     create_slack_mcp_server,
     create_agent,
     process_message,
+    process_message_streaming,
     MCPServerStdio,
 )
 from tools import ImageProcessor
@@ -163,6 +164,121 @@ class SlackSocketModeServer:
         except Exception as e:
             logger.error(f"Error fetching thread history: {e}", exc_info=True)
             return None
+
+    # --- Streaming Message Processing & Response Method ---
+    async def _process_and_respond_streaming(
+        self, text: str, say: slack_bolt.Say, channel_id: str, thread_ts_for_reply: Optional[str] = None,
+        image_urls: Optional[List[str]] = None, use_thread_history: bool = True, user_id: str = None
+    ):
+        """Sends message to agent and posts streaming response to Slack."""
+        global agent
+        if not agent: # Check if agent is ready
+            logger.error("Livia agent not ready.")
+            await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
+            return
+
+        # Store the original channel for validation
+        original_channel_id = channel_id
+
+        # Check if channel is allowed
+        if not await is_channel_allowed(channel_id, user_id or "unknown", self.app.client):
+            return  # Silently ignore unauthorized channels
+
+        if text and any(phrase in text.lower() for phrase in [
+            "encontrei o arquivo", "você pode acessá-lo", "estou à disposição",
+            "não consegui encontrar", "vou procurar", "aqui está"
+        ]):
+            logger.info("Detected bot's own response pattern, skipping processing")
+            return
+
+        context_input = text
+
+        # Use thread history as context if available
+        if use_thread_history and thread_ts_for_reply:
+            logger.info(f"Fetching history for thread {thread_ts_for_reply}...")
+            full_history = await self._fetch_thread_history(channel_id, thread_ts_for_reply)
+            if full_history:
+                context_input = full_history + f"\n\nLatest message: {text}"
+            else:
+                logger.warning("Failed to fetch thread history.")
+
+        async with agent_lock: # Ensure only one request processed at a time
+            try:
+                logger.info(f"Processing message via Livia agent with STREAMING...")
+
+                # Process image URLs if any
+                processed_image_urls = []
+                if image_urls:
+                    logger.info(f"Processing {len(image_urls)} images...")
+                    processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
+
+                # Post initial message to get message timestamp for updates
+                initial_response = await say(text="🤔 Pensando...", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                message_ts = initial_response.get("ts")
+
+                # Streaming callback to update Slack message
+                current_text = ""
+                last_update_length = 0
+                import time
+                last_update_time = time.time()
+
+                async def stream_callback(delta_text: str, full_text: str):
+                    nonlocal current_text, last_update_length, last_update_time
+                    current_text = full_text
+                    current_time = time.time()
+
+                    # Update message every 20 characters or every 1 second, or when complete
+                    should_update = (
+                        len(current_text) - last_update_length >= 20 or  # Every 20 chars
+                        current_time - last_update_time >= 1.0 or       # Every 1 second
+                        not delta_text                                   # When complete
+                    )
+
+                    if should_update and current_text:
+                        try:
+                            # Update the message with current streaming text
+                            await self.app.client.chat_update(
+                                channel=original_channel_id,
+                                ts=message_ts,
+                                text=current_text
+                            )
+                            last_update_length = len(current_text)
+                            last_update_time = current_time
+                        except Exception as update_error:
+                            logger.warning(f"Failed to update streaming message: {update_error}")
+
+                # Delegate processing to the agent with streaming support
+                response = await process_message_streaming(agent, context_input, processed_image_urls, stream_callback)
+
+                # Final update with complete response
+                try:
+                    await self.app.client.chat_update(
+                        channel=original_channel_id,
+                        ts=message_ts,
+                        text=str(response)
+                    )
+                except Exception as final_update_error:
+                    logger.warning(f"Failed to update final message: {final_update_error}")
+                    # Fallback: post new message
+                    await say(text=str(response), channel=original_channel_id, thread_ts=thread_ts_for_reply)
+
+                logger.info(f"USER REQUEST: {context_input}")
+                logger.info(f"BOT RESPONSE (STREAMING): {response}")
+
+            except Exception as e:
+                logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)
+                # Try to update the initial message with error
+                try:
+                    if 'message_ts' in locals():
+                        await self.app.client.chat_update(
+                            channel=original_channel_id,
+                            ts=message_ts,
+                            text=f"Sorry, I encountered an error: {str(e)}"
+                        )
+                    else:
+                        await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                except:
+                    await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
 
     # --- Message Processing & Response Method ---
     async def _process_and_respond(
@@ -330,7 +446,7 @@ class SlackSocketModeServer:
 
             if should_process:
                 image_urls = self._extract_image_urls(event)
-                await self._process_and_respond(
+                await self._process_and_respond_streaming(
                     text=text,
                     say=say,
                     channel_id=channel_id,
@@ -396,7 +512,7 @@ class SlackSocketModeServer:
                 processed_messages.clear()
                 logger.info("Cleared processed messages cache")
 
-            await self._process_and_respond(
+            await self._process_and_respond_streaming(
                 text=text,
                 say=say,
                 channel_id=channel_id,

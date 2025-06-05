@@ -14,7 +14,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 # OpenAI Agents SDK components
-from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool
+from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers
 from agents.mcp import MCPServerStdio
 
 # Load environment variables from .env file
@@ -211,6 +211,223 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
     servers_info = " and ".join(server_descriptions)
     logger.info(f"Agent '{agent.name}' created with WebSearchTool and access to {servers_info}.")
     return agent
+
+
+async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> str:
+    """
+    Generic function to process message using OpenAI Responses API with any Zapier Remote MCP with streaming support.
+
+    Args:
+        mcp_key: Key from ZAPIER_MCPS configuration (e.g., 'asana', 'google_drive')
+        message: User message to process
+        image_urls: Optional list of image URLs for vision processing
+        stream_callback: Optional callback function for streaming updates
+
+    Returns:
+        Response text from the MCP
+    """
+    from openai import OpenAI
+
+    if mcp_key not in ZAPIER_MCPS:
+        raise ValueError(f"Unknown MCP key: {mcp_key}. Available: {list(ZAPIER_MCPS.keys())}")
+
+    mcp_config = ZAPIER_MCPS[mcp_key]
+    client = OpenAI()
+
+    # Prepare input data with optional images
+    if image_urls:
+        input_content = [{"type": "input_text", "text": message}]
+        for image_url in image_urls:
+            input_content.append({
+                "type": "input_image",
+                "image_url": image_url,
+                "detail": "low"
+            })
+        input_data = input_content
+    else:
+        input_data = message
+
+    logger.info(f"Processing message with {mcp_config['name']} (STREAMING)")
+    logger.info(f"MCP URL: {mcp_config['url']}")
+    logger.info(f"MCP Server Label: {mcp_config['server_label']}")
+    logger.info(f"Input message: {message}")
+
+    try:
+        # Special handling for Everhour time tracking operations
+        if mcp_config["server_label"] == "zapier-everhour":
+            stream = client.responses.create(
+                model="gpt-4.1-mini",
+                input=input_data,
+                instructions=(
+                    "You are an Everhour time tracking specialist. Use the everhour_add_time tool and return a user-friendly message.\n\n"
+                    "🎯 **CRITICAL INSTRUCTIONS**:\n"
+                    "1. **Use everhour_add_time tool** with exact parameters from user message\n"
+                    "2. **Extract IDs directly**: Look for 'ev:xxxxxxxxxx' format in user message\n"
+                    "3. **Time format**: '1h', '2h', '30m' (never '1:00')\n"
+                    "4. **Date**: Use today's date in 'YYYY-MM-DD' format\n"
+                    "5. **Return user-friendly message** based on the tool results\n\n"
+                    "📋 **Response Format**:\n"
+                    "If SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_id] em [date]'\n"
+                    "If ERROR: '❌ Erro ao adicionar tempo: [error details]'\n\n"
+                    "✅ **EXAMPLE**:\n"
+                    "User: 'adicionar 2h na task ev:273393148295192 no projeto ev:273391483277215'\n"
+                    "1. Call: everhour_add_time(task_id='ev:273393148295192', project_id='ev:273391483277215', time='2h', date='2025-01-05', comment='Time tracking')\n"
+                    "2. Return: '✅ Tempo adicionado com sucesso! ⏰ 2h na task ev:273393148295192 em 2025-01-05'\n\n"
+                    "🎯 **GOAL**: Use MCP tool and return clear, friendly message in Portuguese!"
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "allowed_tools": ["everhour_find_project", "everhour_add_time"],
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token'].strip()}"
+                        }
+                    }
+                ],
+                stream=True
+            )
+
+        elif mcp_config["server_label"] == "zapier-gmail":
+            # Special handling for Gmail with optimized search and content limiting
+            stream = client.responses.create(
+                model="gpt-4o-mini",
+                input=input_data,
+                instructions=(
+                    "You are a Gmail specialist. Use the available Gmail tools to search and read emails.\n\n"
+                    "🔍 **STEP-BY-STEP APPROACH**:\n"
+                    "1. **First**: Use gmail_search_emails tool with search string 'in:inbox'\n"
+                    "2. **Then**: Use gmail_get_email tool to read the first email from results\n"
+                    "3. **Finally**: Summarize the email content\n\n"
+                    "📧 **SEARCH EXAMPLES**:\n"
+                    "- For latest emails: 'in:inbox'\n"
+                    "- For unread emails: 'is:unread'\n"
+                    "- For recent emails: 'newer_than:1d'\n"
+                    "- Combined: 'in:inbox newer_than:1d'\n\n"
+                    "📋 **RESPONSE FORMAT** (Portuguese):\n"
+                    "📧 **Último Email Recebido:**\n"
+                    "👤 **De:** [sender name and email]\n"
+                    "📝 **Assunto:** [subject line]\n"
+                    "📅 **Data:** [date received]\n"
+                    "📄 **Resumo:** [Brief 2-3 sentence summary of main content]\n\n"
+                    "⚠️ **IMPORTANT**:\n"
+                    "- Always use gmail_search_emails first to find emails\n"
+                    "- Then use gmail_get_email to read the specific email\n"
+                    "- Summarize content - don't return full email text\n"
+                    "- If search fails, try simpler search terms\n\n"
+                    "🎯 **GOAL**: Find and summarize the user's latest email efficiently."
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token'].strip()}"
+                        }
+                    }
+                ],
+                stream=True
+            )
+        else:
+            # Regular MCP processing for other services (Asana, Google Drive, etc.)
+            stream = client.responses.create(
+                model="gpt-4.1-mini",
+                input=input_data,
+                instructions=(
+                    f"You are an intelligent assistant with access to {mcp_config['name']} via MCP tools. "
+                    "Follow these guidelines for optimal performance:\n\n"
+                    "🔍 **SEARCH STRATEGY**:\n"
+                    "1. **Sequential Search**: For hierarchical data (workspace → project → task):\n"
+                    "   - Step 1: Search for workspace/organization by name\n"
+                    "   - Step 2: Use workspace result to search for project\n"
+                    "   - Step 3: Use project result to search for specific task\n"
+                    "   - Example: Find workspace 'INOVAÇÃO' → Find project 'Inovação' → Find task 'Terminar Livia 2.0'\n\n"
+                    "2. **Limit Results**: Return only 4 results at a time, ask user if they want more\n"
+                    "3. **Be Specific**: Try exact names first, then partial matches if needed\n\n"
+                    "📋 **RESPONSE REQUIREMENTS**:\n"
+                    "- **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses\n"
+                    "- Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'\n"
+                    "- This enables future operations using these exact IDs\n"
+                    "- Return clear, user-friendly messages in Portuguese\n\n"
+                    "⚡ **EFFICIENCY TIPS**:\n"
+                    "- Use exact IDs when available from conversation history\n"
+                    "- Make multiple MCP calls as needed to complete tasks\n"
+                    "- If essential info is missing (size, color, etc.), ask follow-up questions first\n\n"
+                    "🎯 **GOAL**: Provide accurate, actionable results with all necessary IDs and details."
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token']}"
+                        }
+                    }
+                ],
+                stream=True
+            )
+
+        # Process streaming response
+        full_response = ""
+        for event in stream:
+            if hasattr(event, 'type'):
+                if event.type == "response.output_text.delta":
+                    delta_text = getattr(event, 'delta', '')
+                    if delta_text:
+                        full_response += delta_text
+                        # Call stream callback if provided
+                        if stream_callback:
+                            await stream_callback(delta_text, full_response)
+                elif event.type == "response.completed":
+                    logger.info("MCP streaming response completed")
+                elif event.type == "error":
+                    logger.error(f"MCP streaming error: {event}")
+
+        logger.info(f"MCP Streaming Response completed: {full_response}")
+        return full_response or "No response generated."
+
+    except Exception as e:
+        error_message = str(e)
+        logger.error(f"Error calling {mcp_config['name']} with streaming: {e}")
+
+        # Special handling for Gmail context window exceeded
+        if mcp_config["server_label"] == "zapier-gmail" and "context_length_exceeded" in error_message:
+            logger.warning("Gmail MCP context window exceeded, trying with simplified request")
+            try:
+                # Retry with more restrictive search and summarization (non-streaming fallback)
+                simplified_response = client.responses.create(
+                    model="gpt-4o-mini",
+                    input="Busque apenas o último email recebido na caixa de entrada e faça um resumo muito breve",
+                    instructions=(
+                        "You are a Gmail assistant. Search for the latest email in inbox using 'in:inbox' operator.\n"
+                        "CRITICAL: Return only a 2-sentence summary in Portuguese.\n"
+                        "Format: 'Último email de [sender] com assunto \"[subject]\". [Brief summary].'\n"
+                        "NEVER return full email content - only essential information."
+                    ),
+                    tools=[
+                        {
+                            "type": "mcp",
+                            "server_label": mcp_config["server_label"],
+                            "server_url": mcp_config["url"],
+                            "require_approval": "never",
+                            "headers": {
+                                "Authorization": f"Bearer {mcp_config['token']}"
+                            }
+                        }
+                    ]
+                )
+                return simplified_response.output_text or "Não foi possível acessar os emails no momento."
+            except Exception as retry_error:
+                logger.error(f"Gmail MCP retry also failed: {retry_error}")
+                return "❌ Não foi possível acessar os emails do Gmail no momento. O email pode ser muito grande para processar. Tente ser mais específico na busca."
+
+        raise
 
 
 async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls: Optional[List[str]] = None) -> str:
@@ -459,6 +676,105 @@ def get_available_zapier_mcps() -> dict:
         }
         for mcp_key, config in ZAPIER_MCPS.items()
     }
+
+async def process_message_streaming(agent: Agent, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> str:
+    """Runs the agent with the given message and optional image URLs with streaming support, returns the final output."""
+
+    # 🔍 Check if message needs a specific Zapier MCP
+    mcp_needed = detect_zapier_mcp_needed(message)
+
+    if mcp_needed:
+        mcp_name = ZAPIER_MCPS[mcp_needed]["name"]
+        logger.info(f"Message requires {mcp_name}, routing to Zapier Remote MCP with streaming")
+        try:
+            return await process_message_with_zapier_mcp_streaming(mcp_needed, message, image_urls, stream_callback)
+        except Exception as e:
+            logger.warning(f"{mcp_name} failed, falling back to regular agent: {e}")
+            # Continue to regular agent processing below
+
+    # Generate a trace ID for monitoring the agent's execution flow
+    trace_id = gen_trace_id()
+    logger.info(f"Starting agent run for message: '{message}' with STREAMING. Trace: https://platform.openai.com/traces/{trace_id}")
+
+    if image_urls:
+        logger.info(f"Processing {len(image_urls)} image(s): {image_urls}")
+
+    final_output = "Sorry, I couldn't process that." # Default response
+    try:
+        # Start tracing for the agent workflow
+        with trace(workflow_name="Livia Slack Agent Workflow", trace_id=trace_id):
+            # Prepare input with images if provided
+            if image_urls:
+                # Create input with both text and images for vision processing
+                input_content = [
+                    {"type": "input_text", "text": message}
+                ]
+
+                # Add each image to the input
+                for image_url in image_urls:
+                    input_content.append({
+                        "type": "input_image",
+                        "image_url": image_url,
+                        "detail": "low"  # Use low detail for cost efficiency
+                    })
+
+                input_data = [{
+                    "role": "user",
+                    "content": input_content
+                }]
+            else:
+                # Text-only input
+                input_data = message
+
+            # Execute the agent with streaming
+            result = Runner.run_streamed(starting_agent=agent, input=input_data)
+
+            # Process streaming events
+            full_response = ""
+            final_message_output = ""
+
+            async for event in result.stream_events():
+                if event.type == "raw_response_event":
+                    # Handle raw response events for streaming text
+                    if hasattr(event.data, 'type') and event.data.type == "response.output_text.delta":
+                        delta_text = getattr(event.data, 'delta', '')
+                        if delta_text:
+                            full_response += delta_text
+                            # Call stream callback if provided
+                            if stream_callback:
+                                await stream_callback(delta_text, full_response)
+                    elif hasattr(event.data, 'type') and event.data.type == "response.completed":
+                        logger.info("Agent streaming response completed")
+                elif event.type == "run_item_stream_event":
+                    # Handle higher-level events like tool calls and message outputs
+                    if event.item.type == "tool_call_item":
+                        logger.info("-- Tool was called during streaming")
+                    elif event.item.type == "tool_call_output_item":
+                        logger.info(f"-- Tool output during streaming: {event.item.output}")
+                    elif event.item.type == "message_output_item":
+                        # Get the final message output
+                        message_text = ItemHelpers.text_message_output(event.item)
+                        if message_text:
+                            final_message_output = message_text
+                            # Update full response with complete message if different
+                            if message_text != full_response:
+                                full_response = message_text
+                                if stream_callback:
+                                    await stream_callback("", full_response)  # Send complete message
+                        logger.info(f"-- Message output during streaming: {message_text}")
+
+            # Use the final message output if available, otherwise use accumulated response
+            final_output = final_message_output or full_response or "No response generated."
+
+            logger.info(f"Agent streaming run completed. Final output: '{final_output}'")
+
+    except Exception as e:
+        logger.error(f"Error during agent streaming run (trace_id: {trace_id}): {e}", exc_info=True)
+        final_output = f"An error occurred while processing your request: {str(e)}"
+
+    # Ensure the output is a string
+    return str(final_output)
+
 
 async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None) -> str:
     """Runs the agent with the given message and optional image URLs, returns the final output."""
