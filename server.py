@@ -253,21 +253,9 @@ class SlackSocketModeServer:
                 logger.info("Mention in thread detected, will be handled by app_mention event")
                 return
 
-            if is_mention_in_text and not thread_ts:
-                logger.info("Detected mention in message text, processing as mention...")
-                cleaned_text = text.replace(f"<@{bot_user_id}>", "").strip()
-                if not cleaned_text:
-                    cleaned_text = "Hello! How can I help you?"
-
-                image_urls = self._extract_image_urls(event)
-                await self._process_and_respond(
-                    text=cleaned_text,
-                    say=say,
-                    channel_id=channel_id,
-                    thread_ts_for_reply=event.get("ts"),
-                    image_urls=image_urls,
-                    use_thread_history=False
-                )
+            # Skip mentions in message events - they'll be handled by app_mention
+            if is_mention_in_text:
+                logger.info("Mention detected in message event, will be handled by app_mention event")
                 return
 
             # For DMs, always process. For threads, check if started with mention

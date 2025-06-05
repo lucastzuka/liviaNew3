@@ -28,30 +28,36 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
-async def create_asana_mcp_server() -> MCPServerStdio:
-    """Creates and returns an Asana MCP Server instance using @roychri/mcp-server-asana with token authentication."""
+# TEMPORARILY COMMENTED FOR TESTING
+# async def create_asana_mcp_server() -> MCPServerStdio:
+#     """Creates and returns an Asana MCP Server instance using @roychri/mcp-server-asana with token authentication."""
 
-    logger.info("Creating Asana MCP Server connection with token authentication...")
+#     logger.info("Creating Asana MCP Server connection with token authentication...")
 
-    asana_command = "npx"
-    asana_args = ["-y", "@roychri/mcp-server-asana"]
-    asana_token = "2/1203422181648476/1210469533636732:cb4cc6cfe7871e7d0363b5e2061765d3"
+#     asana_command = "npx"
+#     asana_args = ["-y", "@roychri/mcp-server-asana"]
+#     asana_token = "2/1203422181648476/1210469533636732:cb4cc6cfe7871e7d0363b5e2061765d3"
 
-    logger.info(f"Starting Asana MCP Server with command: {asana_command} {' '.join(asana_args)}")
+#     logger.info(f"Starting Asana MCP Server with command: {asana_command} {' '.join(asana_args)}")
 
-    asana_server = MCPServerStdio(
-        name="Asana MCP Server",
-        params={
-            "command": asana_command,
-            "args": asana_args,
-            "env": {
-                **os.environ,
-                "ASANA_ACCESS_TOKEN": asana_token
-            },
-        },
-    )
-    logger.info("Asana MCP Server instance created with token authentication.")
-    return asana_server
+#     asana_server = MCPServerStdio(
+#         name="Asana MCP Server",
+#         params={
+#             "command": asana_command,
+#             "args": asana_args,
+#             "env": {
+#                 **os.environ,
+#                 "ASANA_ACCESS_TOKEN": asana_token
+#             },
+#         },
+#     )
+#     logger.info("Asana MCP Server instance created with token authentication.")
+#     return asana_server
+
+async def create_asana_mcp_server():
+    """TEMPORARILY DISABLED FOR TESTING - Returns None instead of Asana MCP Server."""
+    logger.info("Asana MCP Server temporarily disabled for testing")
+    return None
 
 
 async def create_slack_mcp_server() -> MCPServerStdio:
@@ -96,50 +102,51 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
 
 
 
-    asana_tools_description = ""
     zapier_tools_description = ""
 
-    if asana_server:
-        asana_tools_description = (
-            "📋 **Asana Tools** (via MCP Server):\n"
-            "  - List workspaces and projects\n"
-            "  - Search tasks with proper filters (always include text, completed status, or project filters)\n"
-            "  - Get specific tasks by ID\n"
-            "  - Create and manage tasks\n"
-            "  - Update task status and assignments\n"
-            "  - Get project sections and task counts\n"
-            "  - Manage team collaboration\n\n"
-            "**Important Asana Search Guidelines:**\n"
-            "  - ALWAYS use workspace ID '1200537647127763' (never use workspace name)\n"
-            "  - ALWAYS use asana_search_projects first to find relevant projects and get their GIDs\n"
-            "  - When searching tasks, ALWAYS include completed=false AND text='' (empty string is valid)\n"
-            "  - Use specific project GIDs (not names) when searching tasks\n"
-            "  - For project-specific tasks, use 'projects' filter with project GID + completed + text filters\n"
-            "  - For user tasks, search within specific projects rather than workspace-wide\n"
-            "  - CRITICAL: API requires completed + text filters even when using projects filter\n"
-            "  - Known workspace: 'ℓiⱴε - The Culture-Driven Agency' (ID: 1200537647127763)\n"
-            "  - User lucas.vieira@live.tt has ID: 1203422181694687\n"
-            "  - WORKFLOW: 1) Find project GID → 2) Search tasks using project GID + filters\n"
-            "  - IMPORTANT: Project names have prefixes like '1. ELECTROLUX (BR)', use regex patterns like '.*ELECTROLUX.*BR.*'\n"
-            "  - CORRECT EXAMPLE: asana_search_tasks(workspace='1200537647127763', projects=['1204965509777978'], completed=false, text='', limit=5)\n"
-            "  - ALTERNATIVE: Use asana_get_project(project_id='1204965509777978') to get project details first\n"
-            "  - NEVER use projects_any - always use projects=['project_id'] as array\n"
-        )
+    # TEMPORARILY COMMENTED FOR TESTING
+    # if asana_server:
+    #     asana_tools_description = (
+    #         "📋 **Asana Tools** (via MCP Server):\n"
+    #         "  - List workspaces and projects\n"
+    #         "  - Search tasks with proper filters (always include text, completed status, or project filters)\n"
+    #         "  - Get specific tasks by ID\n"
+    #         "  - Create and manage tasks\n"
+    #         "  - Update task status and assignments\n"
+    #         "  - Get project sections and task counts\n"
+    #         "  - Manage team collaboration\n\n"
+    #         "**Important Asana Search Guidelines:**\n"
+    #         "  - ALWAYS use workspace ID '1200537647127763' (never use workspace name)\n"
+    #         "  - ALWAYS use asana_search_projects first to find relevant projects and get their GIDs\n"
+    #         "  - When searching tasks, ALWAYS include completed=false AND text='' (empty string is valid)\n"
+    #         "  - Use specific project GIDs (not names) when searching tasks\n"
+    #         "  - For project-specific tasks, use 'projects' filter with project GID + completed + text filters\n"
+    #         "  - For user tasks, search within specific projects rather than workspace-wide\n"
+    #         "  - CRITICAL: API requires completed + text filters even when using projects filter\n"
+    #         "  - Known workspace: 'ℓiⱴε - The Culture-Driven Agency' (ID: 1200537647127763)\n"
+    #         "  - User lucas.vieira@live.tt has ID: 1203422181694687\n"
+    #         "  - WORKFLOW: 1) Find project GID → 2) Search tasks using project GID + filters\n"
+    #         "  - IMPORTANT: Project names have prefixes like '1. ELECTROLUX (BR)', use regex patterns like '.*ELECTROLUX.*BR.*'\n"
+    #         "  - CORRECT EXAMPLE: asana_search_tasks(workspace='1200537647127763', projects=['1204965509777978'], completed=false, text='', limit=5)\n"
+    #         "  - ALTERNATIVE: Use asana_get_project(project_id='1204965509777978') to get project details first\n"
+    #         "  - NEVER use projects_any - always use projects=['project_id'] as array\n"
+    #     )
 
     zapier_tools_description = (
-        "⚡ **Zapier Google Drive Tools** (ATIVO via Remote MCP):\n"
-        "  - ✅ Google Drive: buscar, listar, criar e gerenciar arquivos e pastas\n"
+        "⚡ **Zapier Integration Tools** (ATIVO via Remote MCP):\n"
+        "  - ✅ **Asana**: gerenciar projetos, tarefas e workspaces\n"
+        "  - ✅ **Google Drive**: buscar, listar, criar e gerenciar arquivos e pastas\n"
+        "**Comandos Asana:**\n"
+        "  - 'buscar tarefas do projeto', 'listar projetos do workspace'\n"
+        "  - 'criar tarefa', 'atualizar status da tarefa'\n"
         "**Comandos Google Drive:**\n"
         "  - 'buscar arquivo no drive', 'procurar pasta no google drive'\n"
         "  - 'encontrar documento', 'listar arquivos do drive'\n"
-        "**Dicas para busca no Google Drive:**\n"
-        "  - Para arquivos: use 'buscar arquivo [nome]' ou 'encontrar arquivo [nome]'\n"
-        "  - Para pastas: use 'procurar pasta [nome]' ou 'buscar pasta [nome]'\n"
+        "**Dicas:**\n"
+        "  - Para Asana: use 'asana', 'projeto', 'tarefa', 'workspace'\n"
+        "  - Para Google Drive: use 'drive', 'arquivo', 'pasta', 'documento'\n"
         "  - IMPORTANTE: TargetGroupIndex_BR2024 é um ARQUIVO, não pasta\n"
-        "  - Se não encontrar, tente busca parcial: 'TargetGroup' pode encontrar 'TargetGroupIndex_BR2024'\n"
-        "  - Use termos específicos e considere sufixos como _BR2024, _2024, etc.\n"
-        "  - Se busca exata falhar, sugira ao usuário tentar termos parciais\n"
-        "  - Sempre especifique se está buscando arquivo ou pasta\n"
+        "  - Se não encontrar, tente busca parcial ou termos relacionados\n"
     )
 
     agent = Agent(
@@ -150,7 +157,6 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "You have access to multiple powerful tools:\n\n"
             "🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers\n"
             "👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs\n"
-            f"{asana_tools_description}"
             f"{zapier_tools_description}"
             "📱 **Slack Tools** (via MCP Server):\n"
             "  - List channels and users\n"
@@ -168,10 +174,11 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "- Consider that file names may have suffixes like _BR2024, _2024, etc.\n"
             "- Always offer to try broader or more specific search terms when initial search fails\n"
             "- When user says 'pasta' but means 'arquivo', correct and search for files instead\n"
-            "- CRITICAL: For Asana tasks/projects, ALWAYS use Asana MCP tools, NOT Zapier\n"
-            "- CRITICAL: For Google Drive files/folders, use Zapier Remote MCP\n"
-            "- If user mentions 'asana', 'tarefa', 'projeto', use Asana MCP tools\n"
+            "- CRITICAL: For Asana tasks/projects, use Zapier Asana Remote MCP\n"
+            "- CRITICAL: For Google Drive files/folders, use Zapier Google Drive Remote MCP\n"
+            "- If user mentions 'asana', 'tarefa', 'projeto', use Zapier Asana tools\n"
             "- If user mentions 'drive', 'arquivo', 'pasta', use Zapier Google Drive tools\n"
+            "- Both Asana and Google Drive now use Zapier Remote MCP (different servers)\n"
             f"{'- For Asana: ALWAYS use workspace ID 1200537647127763, NEVER use workspace name' if asana_server else ''}\n"
             f"{'- For Asana workflow: 1) Search projects to get GID → 2) Search tasks using project GID + MANDATORY filters' if asana_server else ''}\n"
             f"{'- When searching tasks: ALWAYS include completed=false AND text=\"\" (empty text is valid filter)' if asana_server else ''}\n"
@@ -231,23 +238,69 @@ async def process_message_with_zapier(message: str, image_urls: Optional[List[st
 
     return response.output_text or "No response generated."
 
+async def process_message_with_zapier_asana(message: str, image_urls: Optional[List[str]] = None) -> str:
+    """Process message using OpenAI Responses API with Zapier Asana Remote MCP."""
+    from openai import OpenAI
+
+    client = OpenAI()
+
+    if image_urls:
+        input_content = [{"type": "input_text", "text": message}]
+        for image_url in image_urls:
+            input_content.append({
+                "type": "input_image",
+                "image_url": image_url,
+                "detail": "low"
+            })
+        input_data = input_content
+    else:
+        input_data = message
+
+    ZAPIER_ASANA_MCP_URL = "https://mcp.zapier.com/api/mcp/s/1206739432030436/mcp"
+    ZAPIER_ASANA_MCP_TOKEN = "ODY3ZGMzYWYtMmFhMy00NWYwLWI4NzItNjFmMDgwNjBmYWEyOjZhOGQ3YzRmLWRhZTQtNGRmMS1iY2JlLWJkNjJhM2MwM2YxYw=="
+
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=input_data,
+        tools=[
+            {
+                "type": "mcp",
+                "server_label": "zapier-asana",
+                "server_url": ZAPIER_ASANA_MCP_URL,
+                "require_approval": "never",
+                "headers": {
+                    "Authorization": f"Bearer {ZAPIER_ASANA_MCP_TOKEN}"
+                }
+            }
+        ]
+    )
+
+    return response.output_text or "No response generated."
+
 async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None) -> str:
     """Runs the agent with the given message and optional image URLs, returns the final output."""
 
-    # Check for Asana keywords first (higher priority)
+    # Check for Asana keywords (use Zapier Asana MCP)
     asana_keywords = ["asana", "projeto", "tarefa", "task", "project", "workspace", "pauta inovação"]
     needs_asana = any(keyword in message.lower() for keyword in asana_keywords)
 
-    # Check for Google Drive/Zapier keywords (only if not Asana)
-    zapier_keywords = ["google drive", "drive", "arquivo", "pasta", "documento", "buscar arquivo", "procurar pasta", "listar documentos"]
-    needs_zapier = any(keyword in message.lower() for keyword in zapier_keywords) and not needs_asana
+    # Check for Google Drive keywords (use Zapier Google Drive MCP)
+    gdrive_keywords = ["google drive", "drive", "arquivo", "pasta", "documento", "buscar arquivo", "procurar pasta", "listar documentos"]
+    needs_gdrive = any(keyword in message.lower() for keyword in gdrive_keywords)
 
-    if needs_zapier:
-        logger.info("Message requires Zapier Google Drive tools, using Responses API with Remote MCP")
+    if needs_asana:
+        logger.info("Message requires Asana tools, using Zapier Asana Remote MCP")
+        try:
+            return await process_message_with_zapier_asana(message, image_urls)
+        except Exception as e:
+            logger.warning(f"Zapier Asana MCP failed, falling back to regular agent: {e}")
+
+    if needs_gdrive:
+        logger.info("Message requires Google Drive tools, using Zapier Google Drive Remote MCP")
         try:
             return await process_message_with_zapier(message, image_urls)
         except Exception as e:
-            logger.warning(f"Zapier MCP failed, falling back to regular agent: {e}")
+            logger.warning(f"Zapier Google Drive MCP failed, falling back to regular agent: {e}")
 
     # Generate a trace ID for monitoring the agent's execution flow
     trace_id = gen_trace_id()
