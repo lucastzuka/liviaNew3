@@ -1,0 +1,19 @@
+# OpenAI Agents SDK and dependencies
+openai-agents>=0.0.11
+openai>=1.0.0
+
+# Slack SDK and Bolt framework
+slack-bolt>=1.18.0
+slack-sdk>=3.26.0
+
+# Async HTTP client for Socket Mode
+aiohttp>=3.9.0
+
+# SSL certificate handling
+certifi>=2023.0.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Additional utilities
+pathlib2>=2.3.7
