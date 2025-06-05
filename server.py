@@ -519,15 +519,6 @@ class SlackSocketModeServer:
                 logger.warning(f"SECURITY: Blocked message event from unauthorized channel {channel_id}")
                 return
 
-            message_id = f"{event.get('channel')}_{event.get('ts')}"
-            if message_id in processed_messages:
-                logger.info(f"Message {message_id} already processed, skipping")
-                return
-            processed_messages.add(message_id)
-
-            if len(processed_messages) > 100:
-                processed_messages.clear()
-
             text = event.get("text", "").strip()
             thread_ts = event.get("thread_ts")
 
@@ -536,19 +527,25 @@ class SlackSocketModeServer:
             # Check if this is a mention in the message text (fallback detection)
             is_mention_in_text = f"<@{bot_user_id}>" in text
 
+            # Skip mentions in message events - they'll be handled by app_mention
+            if is_mention_in_text:
+                logger.info("Mention detected in message event, will be handled by app_mention event")
+                return
+
             # Process thread replies, direct messages, OR mentions in text
             if not thread_ts and event.get("channel_type") != "im" and not is_mention_in_text:
                 logger.info("Not a thread reply, DM, or mention - ignoring")
                 return
 
-            if is_mention_in_text and thread_ts:
-                logger.info("Mention in thread detected, will be handled by app_mention event")
+            # Now check for duplicates only for messages we will actually process
+            message_id = f"{event.get('channel')}_{event.get('ts')}"
+            if message_id in processed_messages:
+                logger.info(f"Message {message_id} already processed, skipping")
                 return
+            processed_messages.add(message_id)
 
-            # Skip mentions in message events - they'll be handled by app_mention
-            if is_mention_in_text:
-                logger.info("Mention detected in message event, will be handled by app_mention event")
-                return
+            if len(processed_messages) > 100:
+                processed_messages.clear()
 
             # For DMs, always process. For threads, check if started with mention
             should_process = False
@@ -591,12 +588,12 @@ class SlackSocketModeServer:
                 logger.warning(f"SECURITY: Blocked app mention from unauthorized channel {channel_id}")
                 return
 
-            # Create unique ID for this mention to prevent duplicates
-            mention_id = f"mention_{event.get('channel')}_{event.get('ts')}"
+            # Create unique ID for this mention to prevent duplicates (same format as message events)
+            message_id = f"{event.get('channel')}_{event.get('ts')}"
 
-            # Check if we already processed this specific mention
-            if mention_id in processed_messages:
-                logger.info(f"Mention {mention_id} already processed, skipping")
+            # Check if we already processed this specific message
+            if message_id in processed_messages:
+                logger.info(f"Mention {message_id} already processed, skipping")
                 return
 
             text = event.get("text", "").strip()
@@ -630,7 +627,7 @@ class SlackSocketModeServer:
             logger.info(f"Processing mention with text: '{text}', audio files: {len(audio_files)}")
 
             # Mark this mention as processed BEFORE processing to prevent duplicates
-            processed_messages.add(mention_id)
+            processed_messages.add(message_id)
 
             # Clean up old processed messages to prevent memory issues
             if len(processed_messages) > 100:
