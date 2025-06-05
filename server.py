@@ -40,6 +40,44 @@ agent_lock = asyncio.Lock()
 processed_messages = set()
 bot_user_id = "U057233T98A"
 
+# DEVELOPMENT SECURITY: Whitelist of allowed channels and users
+ALLOWED_CHANNELS = {"C059NNLU3E1"}  # Only this specific channel
+ALLOWED_USERS = {"U046LTU4TT5"}     # Only this specific user for DMs
+ALLOWED_DM_CHANNELS = set()         # Will be populated with DM channel IDs for allowed users
+
+# --- Security Functions ---
+async def is_channel_allowed(channel_id: str, user_id: str, app_client) -> bool:
+    """
+    DEVELOPMENT SECURITY: Check if the channel is allowed for bot responses.
+    Only allows specific whitelisted channels and DMs with specific users.
+    """
+    global ALLOWED_DM_CHANNELS
+
+    # Check if it's the allowed public channel
+    if channel_id in ALLOWED_CHANNELS:
+        logger.info(f"SECURITY: Channel {channel_id} is in whitelist - ALLOWED")
+        return True
+
+    # Check if it's a DM with an allowed user
+    if user_id in ALLOWED_USERS:
+        try:
+            # Get channel info to check if it's a DM
+            channel_info = await app_client.conversations_info(channel=channel_id)
+            if channel_info["ok"] and channel_info["channel"]["is_im"]:
+                ALLOWED_DM_CHANNELS.add(channel_id)  # Cache DM channel ID
+                logger.info(f"SECURITY: DM channel {channel_id} with allowed user {user_id} - ALLOWED")
+                return True
+        except Exception as e:
+            logger.error(f"SECURITY: Error checking channel info for {channel_id}: {e}")
+
+    # Check if it's a cached DM channel
+    if channel_id in ALLOWED_DM_CHANNELS:
+        logger.info(f"SECURITY: Cached DM channel {channel_id} - ALLOWED")
+        return True
+
+    logger.warning(f"SECURITY: Channel {channel_id} with user {user_id} - BLOCKED")
+    return False
+
 # --- Server Class ---
 class SlackSocketModeServer:
     """Handles Slack connection and event processing."""
@@ -73,6 +111,13 @@ class SlackSocketModeServer:
             self.app,
             os.environ["SLACK_APP_TOKEN"]
         )
+
+        # Log security configuration
+        logger.info("🔒 DEVELOPMENT SECURITY ENABLED:")
+        logger.info(f"   Allowed channels: {ALLOWED_CHANNELS}")
+        logger.info(f"   Allowed users for DMs: {ALLOWED_USERS}")
+        logger.info("   All other channels/users will be BLOCKED")
+
         # Set up event handlers
         self._setup_event_handlers()
 
@@ -123,7 +168,7 @@ class SlackSocketModeServer:
     # --- Message Processing & Response Method ---
     async def _process_and_respond(
         self, text: str, say: slack_bolt.Say, channel_id: str, thread_ts_for_reply: Optional[str] = None,
-        image_urls: Optional[List[str]] = None, use_thread_history: bool = True
+        image_urls: Optional[List[str]] = None, use_thread_history: bool = True, user_id: str = None
     ):
         """Sends message to agent and posts response to Slack."""
         global agent
@@ -135,6 +180,11 @@ class SlackSocketModeServer:
         # CRITICAL SECURITY: Store the original channel for validation
         original_channel_id = channel_id
         logger.info(f"SECURITY: Processing message in channel {original_channel_id}")
+
+        # DEVELOPMENT SECURITY: Check if channel is allowed
+        if not await is_channel_allowed(channel_id, user_id or "unknown", self.app.client):
+            logger.error(f"SECURITY VIOLATION: Blocked response to unauthorized channel {channel_id}")
+            return  # Silently ignore unauthorized channels
 
         if text and any(phrase in text.lower() for phrase in [
             "encontrei o arquivo", "você pode acessá-lo", "estou à disposição",
@@ -232,6 +282,13 @@ class SlackSocketModeServer:
                 logger.info("Ignoring bot message, empty text, or message from bot itself")
                 return
 
+            # DEVELOPMENT SECURITY: Early channel validation
+            channel_id = event.get("channel")
+            user_id = event.get("user")
+            if not await is_channel_allowed(channel_id, user_id, self.app.client):
+                logger.warning(f"SECURITY: Blocked message event from unauthorized channel {channel_id}")
+                return
+
             message_id = f"{event.get('channel')}_{event.get('ts')}"
             if message_id in processed_messages:
                 logger.info(f"Message {message_id} already processed, skipping")
@@ -241,7 +298,6 @@ class SlackSocketModeServer:
             if len(processed_messages) > 100:
                 processed_messages.clear()
 
-            channel_id = event.get("channel")
             text = event.get("text", "").strip()
             thread_ts = event.get("thread_ts")
 
@@ -282,7 +338,8 @@ class SlackSocketModeServer:
                     say=say,
                     channel_id=channel_id,
                     thread_ts_for_reply=thread_ts,
-                    image_urls=image_urls
+                    image_urls=image_urls,
+                    user_id=event.get("user")
                 )
 
         @self.app.event("app_mention")
@@ -295,13 +352,19 @@ class SlackSocketModeServer:
                 logger.info("Ignoring app mention from bot itself")
                 return
 
+            # DEVELOPMENT SECURITY: Early channel validation
+            channel_id = event.get("channel")
+            user_id = event.get("user")
+            if not await is_channel_allowed(channel_id, user_id, self.app.client):
+                logger.warning(f"SECURITY: Blocked app mention from unauthorized channel {channel_id}")
+                return
+
             mention_id = f"mention_{event.get('channel')}_{event.get('ts')}"
             if mention_id in processed_messages:
                 logger.info(f"Mention {mention_id} already processed, skipping")
                 return
             processed_messages.add(mention_id)
 
-            channel_id = event.get("channel")
             text = event.get("text", "").strip()
             thread_ts = event.get("thread_ts") or event.get("ts")  # Use message ts if no thread
 
@@ -331,7 +394,8 @@ class SlackSocketModeServer:
                 channel_id=channel_id,
                 thread_ts_for_reply=thread_ts,
                 image_urls=image_urls,
-                use_thread_history=False  # Don't use history for initial mentions
+                use_thread_history=False,  # Don't use history for initial mentions
+                user_id=event.get("user")
             )
 
     # --- Server Start Method ---
