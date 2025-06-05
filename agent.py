@@ -390,6 +390,52 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 ],
                 stream=True
             )
+
+        elif mcp_config["server_label"] == "zapier-slack":
+            # Special handling for Slack with message search and channel operations
+            stream = client.responses.create(
+                model="gpt-4.1-mini",
+                input=input_data,
+                instructions=(
+                    "You are a Slack specialist. Use the available Slack tools to search messages and manage channels.\n\n"
+                    "💬 **SLACK SEARCH STRATEGY**:\n"
+                    "1. **For channel messages**: Use slack_find_message tool with search query\n"
+                    "2. **Search operators**: Use 'in:channel-name' to search in specific channels\n"
+                    "3. **Sort by timestamp**: Always sort by 'timestamp' in descending order for latest messages\n"
+                    "4. **Channel names**: Use exact channel names like 'inovação' or 'inovacao'\n\n"
+                    "🔍 **SEARCH EXAMPLES**:\n"
+                    "- For channel messages: 'in:inovação' or 'in:inovacao'\n"
+                    "- For recent messages: 'in:channel-name' (automatically sorted by timestamp desc)\n"
+                    "- For specific content: 'in:channel-name keyword'\n\n"
+                    "📋 **RESPONSE FORMAT** (Portuguese):\n"
+                    "💬 **Últimas Mensagens do Canal [channel-name]:**\n\n"
+                    "**[User Name]** - [timestamp]\n"
+                    "📝 [message content]\n"
+                    "🔗 [permalink if available]\n\n"
+                    "**Resumo:** [Brief summary of the latest messages and main topics discussed]\n\n"
+                    "⚠️ **CRITICAL INSTRUCTIONS**:\n"
+                    "- ALWAYS use slack_find_message tool first\n"
+                    "- Use search query 'in:channel-name' format\n"
+                    "- Sort by 'timestamp' in 'desc' order for latest messages\n"
+                    "- If channel not found, try variations like 'inovacao' vs 'inovação'\n"
+                    "- Provide message content and user information\n"
+                    "- Include timestamps and permalinks when available\n"
+                    "- Summarize the main topics or themes from recent messages\n\n"
+                    "🎯 **GOAL**: Find and summarize recent Slack messages from the specified channel."
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token'].strip()}"
+                        }
+                    }
+                ],
+                stream=True
+            )
         else:
             # Regular MCP processing for other services (Asana, Google Drive, etc.)
             stream = client.responses.create(
@@ -642,6 +688,51 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
                     "- Summarize content - don't return full email text\n"
                     "- If search fails, try simpler search terms\n\n"
                     "🎯 **GOAL**: Find and summarize the user's latest email efficiently."
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token'].strip()}"
+                        }
+                    }
+                ]
+            )
+
+        elif mcp_config["server_label"] == "zapier-slack":
+            # Special handling for Slack with message search and channel operations
+            response = client.responses.create(
+                model="gpt-4.1-mini",
+                input=input_data,
+                instructions=(
+                    "You are a Slack specialist. Use the available Slack tools to search messages and manage channels.\n\n"
+                    "💬 **SLACK SEARCH STRATEGY**:\n"
+                    "1. **For channel messages**: Use slack_find_message tool with search query\n"
+                    "2. **Search operators**: Use 'in:channel-name' to search in specific channels\n"
+                    "3. **Sort by timestamp**: Always sort by 'timestamp' in descending order for latest messages\n"
+                    "4. **Channel names**: Use exact channel names like 'inovação' or 'inovacao'\n\n"
+                    "🔍 **SEARCH EXAMPLES**:\n"
+                    "- For channel messages: 'in:inovação' or 'in:inovacao'\n"
+                    "- For recent messages: 'in:channel-name' (automatically sorted by timestamp desc)\n"
+                    "- For specific content: 'in:channel-name keyword'\n\n"
+                    "📋 **RESPONSE FORMAT** (Portuguese):\n"
+                    "💬 **Últimas Mensagens do Canal [channel-name]:**\n\n"
+                    "**[User Name]** - [timestamp]\n"
+                    "📝 [message content]\n"
+                    "🔗 [permalink if available]\n\n"
+                    "**Resumo:** [Brief summary of the latest messages and main topics discussed]\n\n"
+                    "⚠️ **CRITICAL INSTRUCTIONS**:\n"
+                    "- ALWAYS use slack_find_message tool first\n"
+                    "- Use search query 'in:channel-name' format\n"
+                    "- Sort by 'timestamp' in 'desc' order for latest messages\n"
+                    "- If channel not found, try variations like 'inovacao' vs 'inovação'\n"
+                    "- Provide message content and user information\n"
+                    "- Include timestamps and permalinks when available\n"
+                    "- Summarize the main topics or themes from recent messages\n\n"
+                    "🎯 **GOAL**: Find and summarize recent Slack messages from the specified channel."
                 ),
                 tools=[
                     {
