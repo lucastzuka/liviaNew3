@@ -29,6 +29,7 @@ from agent import (
     MCPServerStdio,
 )
 from tools import ImageProcessor
+from slack_formatter import format_message_for_slack
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -261,10 +262,11 @@ class SlackSocketModeServer:
                     if should_update and current_text:
                         try:
                             # Update the message with current streaming text
+                            formatted_text = format_message_for_slack(current_text)
                             await self.app.client.chat_update(
                                 channel=original_channel_id,
                                 ts=message_ts,
-                                text=current_text
+                                text=formatted_text
                             )
                             last_update_length = len(current_text)
                             last_update_time = current_time
@@ -276,10 +278,11 @@ class SlackSocketModeServer:
 
                 # Final update with complete response
                 try:
+                    formatted_response = format_message_for_slack(str(response))
                     await self.app.client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
-                        text=str(response)
+                        text=formatted_response
                     )
                 except Exception as final_update_error:
                     logger.warning(f"Failed to update final message: {final_update_error}")
@@ -287,7 +290,8 @@ class SlackSocketModeServer:
                     await say(text=str(response), channel=original_channel_id, thread_ts=thread_ts_for_reply)
 
                 logger.info(f"USER REQUEST: {context_input}")
-                logger.info(f"BOT RESPONSE (STREAMING): {response}")
+                formatted_response = format_message_for_slack(str(response))
+                logger.info(f"BOT RESPONSE (STREAMING): {formatted_response}")
 
             except Exception as e:
                 logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)
@@ -357,7 +361,8 @@ class SlackSocketModeServer:
                 # Always respond in the original channel
                 logger.info(f"USER REQUEST: {context_input}")
                 logger.info(f"BOT RESPONSE: {response}")
-                await say(text=str(response), channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                formatted_response = format_message_for_slack(str(response))
+                await say(text=formatted_response, channel=original_channel_id, thread_ts=thread_ts_for_reply)
             except Exception as e:
                 logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
                 await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
