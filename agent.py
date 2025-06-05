@@ -300,6 +300,54 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 stream=True
             )
 
+        elif mcp_config["server_label"] == "zapier-gcalendar":
+            # Special handling for Google Calendar with consistent date parameters
+            stream = client.responses.create(
+                model="gpt-4.1-mini",
+                input=input_data,
+                instructions=(
+                    "You are a Google Calendar specialist. Use the available Google Calendar tools to search and manage events.\n\n"
+                    "🗓️ **CALENDAR SEARCH STRATEGY**:\n"
+                    "1. **CRITICAL: Today is June 5, 2025**: Use 2025-06-05 as reference for 'today'\n"
+                    "2. **Default time range**: Search for events from today to next 7 days\n"
+                    "3. **Be specific with dates**: Always include start_date and end_date parameters\n"
+                    "4. **Timezone**: Use 'America/Sao_Paulo' timezone\n\n"
+                    "📋 **SEARCH EXAMPLES**:\n"
+                    "- For today's events: start_date='2025-06-05', end_date='2025-06-05'\n"
+                    "- For this week: start_date='2025-06-05', end_date='2025-06-12'\n"
+                    "- For next events: start_date='2025-06-05', end_date='2025-06-19'\n"
+                    "- For future events: start_date='2025-06-06', end_date='2025-06-30'\n\n"
+                    "📅 **RESPONSE FORMAT** (Portuguese):\n"
+                    "📅 **Eventos no Google Calendar:**\n"
+                    "1. **[Nome do Evento]**\n"
+                    "   - 📅 Data: [data]\n"
+                    "   - ⏰ Horário: [hora início] às [hora fim]\n"
+                    "   - 🔗 Link: [link se disponível]\n"
+                    "   - 📹 Meet: [link meet se disponível]\n\n"
+                    "⚠️ **CRITICAL INSTRUCTIONS**:\n"
+                    "- TODAY IS JUNE 5, 2025 (2025-06-05) - NOT JANUARY!\n"
+                    "- Always search with explicit date ranges in JUNE 2025\n"
+                    "- Use gcalendar_find_events tool with start_date and end_date\n"
+                    "- If no events found, try broader date range in JUNE 2025\n"
+                    "- Always mention the CORRECT date range searched\n"
+                    "- Format times in São Paulo timezone\n"
+                    "- NEVER use January dates - we are in JUNE 2025!\n\n"
+                    "🎯 **GOAL**: Find and display calendar events for JUNE 2025 with correct dates."
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token'].strip()}"
+                        }
+                    }
+                ],
+                stream=True
+            )
+
         elif mcp_config["server_label"] == "zapier-gmail":
             # Special handling for Gmail with optimized search and content limiting
             stream = client.responses.create(
@@ -512,6 +560,53 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
                         "server_url": mcp_config["url"],
                         "require_approval": "never",
                         "allowed_tools": ["everhour_find_project", "everhour_add_time"],
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token'].strip()}"
+                        }
+                    }
+                ]
+            )
+
+        elif mcp_config["server_label"] == "zapier-gcalendar":
+            # Special handling for Google Calendar with consistent date parameters
+            response = client.responses.create(
+                model="gpt-4.1-mini",
+                input=input_data,
+                instructions=(
+                    "You are a Google Calendar specialist. Use the available Google Calendar tools to search and manage events.\n\n"
+                    "🗓️ **CALENDAR SEARCH STRATEGY**:\n"
+                    "1. **CRITICAL: Today is June 5, 2025**: Use 2025-06-05 as reference for 'today'\n"
+                    "2. **Default time range**: Search for events from today to next 7 days\n"
+                    "3. **Be specific with dates**: Always include start_date and end_date parameters\n"
+                    "4. **Timezone**: Use 'America/Sao_Paulo' timezone\n\n"
+                    "📋 **SEARCH EXAMPLES**:\n"
+                    "- For today's events: start_date='2025-06-05', end_date='2025-06-05'\n"
+                    "- For this week: start_date='2025-06-05', end_date='2025-06-12'\n"
+                    "- For next events: start_date='2025-06-05', end_date='2025-06-19'\n"
+                    "- For future events: start_date='2025-06-06', end_date='2025-06-30'\n\n"
+                    "📅 **RESPONSE FORMAT** (Portuguese):\n"
+                    "📅 **Eventos no Google Calendar:**\n"
+                    "1. **[Nome do Evento]**\n"
+                    "   - 📅 Data: [data]\n"
+                    "   - ⏰ Horário: [hora início] às [hora fim]\n"
+                    "   - 🔗 Link: [link se disponível]\n"
+                    "   - 📹 Meet: [link meet se disponível]\n\n"
+                    "⚠️ **CRITICAL INSTRUCTIONS**:\n"
+                    "- TODAY IS JUNE 5, 2025 (2025-06-05) - NOT JANUARY!\n"
+                    "- Always search with explicit date ranges in JUNE 2025\n"
+                    "- Use gcalendar_find_events tool with start_date and end_date\n"
+                    "- If no events found, try broader date range in JUNE 2025\n"
+                    "- Always mention the CORRECT date range searched\n"
+                    "- Format times in São Paulo timezone\n"
+                    "- NEVER use January dates - we are in JUNE 2025!\n\n"
+                    "🎯 **GOAL**: Find and display calendar events for JUNE 2025 with correct dates."
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
                         "headers": {
                             "Authorization": f"Bearer {mcp_config['token'].strip()}"
                         }

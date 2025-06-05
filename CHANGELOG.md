@@ -143,11 +143,12 @@
 
 ## 📈 Estatísticas de Desenvolvimento
 
-- **Total de Commits**: 50+
+- **Total de Commits**: 60+
 - **Arquivos Principais**: 8
 - **MCPs Integrados**: 9
-- **Ferramentas**: 4 (Web Search, Image Vision, Slack MCP, Streaming)
+- **Ferramentas**: 5 (Web Search, File Search, Image Vision, Slack MCP, Streaming)
 - **APIs OpenAI**: 2 (Responses API, Agents SDK)
+- **Vector Store**: vs_683e3a1ac4808191ae5e6fe24392e609
 - **Tempo de Desenvolvimento**: 1 semana
 - **Status**: ✅ Produção Ready
 
@@ -156,12 +157,13 @@
 ## 🏆 Conquistas Técnicas
 
 1. **🚀 Primeira implementação de streaming** em chatbot Slack com OpenAI APIs
-2. **🔄 Arquitetura híbrida** combinando Responses API e Agents SDK
-3. **⚡ Sistema modular** de MCPs plug-and-play
-4. **🛡️ Proteção anti-loop** robusta e testada
-5. **📱 Experiência ChatGPT** nativa no Slack
-6. **🎯 Rate limiting inteligente** para performance otimizada
-7. **🔧 Fallbacks robustos** para máxima confiabilidade
+2. **📄 File Search Tool integrado** com busca semântica e citações automáticas
+3. **🔄 Arquitetura híbrida** combinando Responses API e Agents SDK
+4. **⚡ Sistema modular** de MCPs plug-and-play
+5. **🛡️ Proteção anti-loop** robusta e testada
+6. **📱 Experiência ChatGPT** nativa no Slack
+7. **🎯 Rate limiting inteligente** para performance otimizada
+8. **🔧 Fallbacks robustos** para máxima confiabilidade
 
 ---
 
