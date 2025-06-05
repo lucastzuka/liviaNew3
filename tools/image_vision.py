@@ -29,7 +29,6 @@ class ImageProcessor:
             if file.get("mimetype", "").startswith("image/"):
                 # For Slack uploaded images, we need to use the URL with auth headers
                 if "url_private" in file:
-                    # Add auth header info to the URL for Slack images
                     slack_image_url = f"{file['url_private']}?token={os.environ.get('SLACK_BOT_TOKEN', '')}"
                     image_urls.append(slack_image_url)
                     logger.info(f"Found uploaded image: {file.get('name', 'unknown')} - {file['url_private']}")
@@ -37,17 +36,15 @@ class ImageProcessor:
         # Check for image URLs in text (enhanced URL detection)
         text = event.get("text", "")
 
-        # Pattern for image URLs (more comprehensive)
         url_patterns = [
-            r'https?://[^\s<>]+\.(?:jpg|jpeg|png|gif|webp|bmp|tiff)(?:\?[^\s<>]*)?',  # Direct image URLs
-            r'https?://[^\s<>]*(?:imgur|flickr|instagram|twitter|facebook)[^\s<>]*',   # Image hosting sites
-            r'https?://[^\s<>]*\.(?:com|org|net)/[^\s<>]*\.(?:jpg|jpeg|png|gif|webp)', # Images on websites
+            r'https?://[^\s<>]+\.(?:jpg|jpeg|png|gif|webp|bmp|tiff)(?:\?[^\s<>]*)?',
+            r'https?://[^\s<>]*(?:imgur|flickr|instagram|twitter|facebook)[^\s<>]*',
+            r'https?://[^\s<>]*\.(?:com|org|net)/[^\s<>]*\.(?:jpg|jpeg|png|gif|webp)',
         ]
 
         for pattern in url_patterns:
             found_urls = re.findall(pattern, text, re.IGNORECASE)
             for url in found_urls:
-                # Clean up URL (remove trailing punctuation)
                 url = re.sub(r'[.,;!?]+$', '', url)
                 if url not in image_urls:
                     image_urls.append(url)
@@ -63,7 +60,6 @@ class ImageProcessor:
         """Process Slack private image URL to make it accessible."""
         try:
             if "files.slack.com" in image_url:
-                # For Slack images, we need to download and convert to base64
                 headers = {
                     "Authorization": f"Bearer {os.environ.get('SLACK_BOT_TOKEN', '')}"
                 }
@@ -72,7 +68,6 @@ class ImageProcessor:
                     async with session.get(image_url, headers=headers) as response:
                         if response.status == 200:
                             image_data = await response.read()
-                            # Convert to base64 data URL
                             content_type = response.headers.get('content-type', 'image/jpeg')
                             base64_image = base64.b64encode(image_data).decode('utf-8')
                             return f"data:{content_type};base64,{base64_image}"
@@ -80,7 +75,6 @@ class ImageProcessor:
                             logger.error(f"Failed to download Slack image: {response.status}")
                             return None
             else:
-                # For external URLs, return as-is
                 return image_url
 
         except Exception as e:

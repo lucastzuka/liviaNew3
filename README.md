@@ -1,17 +1,19 @@
-# Livia - Slack Chatbot Agent
+# 🤖 Livia - Slack Chatbot Agent
 
-Livia é um chatbot inteligente para Slack que usa OpenAI Agents SDK e API Responses. Ela responde apenas em threads que mencionam o bot na primeira mensagem e inclui ferramentas avançadas como busca na web, busca em arquivos e visão de imagens.
+Livia é um chatbot inteligente para Slack que usa **OpenAI Agents SDK** e **API Responses**. Ela responde apenas em threads que mencionam o bot na primeira mensagem e inclui ferramentas avançadas como busca na web, visão de imagens e automação via Zapier.
 
-## Características
+## ✨ Características
 
-- **Resposta Inteligente**: Responde apenas em threads que começam com uma menção ao bot
-- **Ferramentas Avançadas**:
+- **🎯 Resposta Inteligente**: Responde apenas em threads que começam com uma menção ao bot
+- **🛠️ Ferramentas Avançadas**:
   - 🔍 **Web Search Tool** - Busca informações atuais na internet, notícias e fatos
   - 👁️ **Image Vision** - Análise de imagens enviadas via Slack ou URLs
   - 📋 **Asana Integration** - Gerenciamento de projetos e tarefas via MCP
-  - 🔧 **MCP Tools** - Ferramentas do Model Context Protocol para Slack
-- **OpenAI Agents SDK**: Usa a mais recente tecnologia de agentes da OpenAI
-- **API Responses**: Utiliza a nova API Responses da OpenAI (não Chat Completions)
+  - ⚡ **Zapier Automation** - Integração com Google Drive, Gmail e outras ferramentas
+  - 🔧 **Slack MCP Tools** - Ferramentas nativas do Slack via Model Context Protocol
+- **🚀 OpenAI Agents SDK**: Usa a mais recente tecnologia de agentes da OpenAI
+- **🔄 API Responses**: Utiliza a nova API Responses da OpenAI para automação
+- **🛡️ Proteção Anti-Loop**: Sistema robusto contra respostas infinitas
 
 ## Configuração
 
@@ -111,24 +113,32 @@ Preencha com:
 - `SLACK_TEAM_ID`: ID do workspace (T...)
 - `OPENAI_API_KEY`: Sua chave da API OpenAI
 
-**Nota**: A integração com Asana está habilitada por padrão.
+### 5. Integrações Disponíveis
 
-### 5. Integração com Asana
+#### 📋 Asana Integration
+A Livia vem com integração ao Asana via MCP (Model Context Protocol).
 
-A Livia vem com integração ao Asana habilitada por padrão via MCP (Model Context Protocol).
-
-**Funcionalidades Disponíveis**:
+**Funcionalidades**:
 - ✅ Criar e gerenciar tarefas
 - ✅ Listar projetos e workspaces
 - ✅ Atualizar status de tarefas
 - ✅ Buscar tarefas e projetos
 - ✅ Gerenciar colaboração em equipe
 
+#### ⚡ Zapier Automation
+Integração com Zapier Remote MCP para automação de workflows.
+
+**Funcionalidades**:
+- ✅ **Google Drive**: Buscar, listar, criar e gerenciar arquivos e pastas
+- ✅ **Gmail**: Enviar emails e gerenciar mensagens
+- ✅ **Notion**: Criar páginas e gerenciar conteúdo
+- ✅ **Trello**: Adicionar cards e gerenciar boards
+
 **Exemplos de Comandos**:
-- "Crie uma tarefa no Asana: Revisar documentação"
-- "Liste meus projetos no Asana"
-- "Qual o status das tarefas do projeto Marketing?"
-- "Atribua a tarefa X para João"
+- "Buscar arquivo TargetGroupIndex_BR2024 no Google Drive"
+- "Procurar pasta Marketing no drive"
+- "Enviar email para equipe@empresa.com"
+- "Criar página no Notion sobre reunião"
 
 ## Uso
 
@@ -154,14 +164,25 @@ python server.py
    - Livia analisará automaticamente e descreverá o conteúdo
 
 4. **Use comandos naturais**:
+
+   **🔍 Busca na Web:**
    - "Pesquise informações sobre IA na internet"
    - "Qual é a cotação do dólar hoje?"
    - "Busque notícias recentes sobre tecnologia"
+
+   **👁️ Análise de Imagens:**
    - "Analise esta imagem" (com upload de imagem)
    - "O que você vê nesta foto?" (com link de imagem)
+
+   **📋 Asana:**
    - "Crie uma tarefa no Asana: Revisar documentação"
    - "Liste meus projetos no Asana"
    - "Qual o status das tarefas do projeto X?"
+
+   **⚡ Zapier/Google Drive:**
+   - "Buscar arquivo TargetGroupIndex_BR2024 no Google Drive"
+   - "Procurar pasta Marketing no drive"
+   - "Listar documentos recentes no Google Drive"
 
 ### 6. Análise de Imagens com IA
 
@@ -196,13 +217,29 @@ A Livia possui capacidades avançadas de visão computacional usando o modelo **
 - Não processa GIFs animados
 - Melhor qualidade com imagens claras e bem iluminadas
 
-## Arquitetura
+## 🏗️ Arquitetura
 
-- **agent.py**: Define a Livia e suas capacidades
-- **server.py**: Servidor Socket Mode do Slack
-- **OpenAI Agents SDK**: Orquestração de agentes
-- **MCP Server**: Comunicação com APIs do Slack
-- **API Responses**: Nova API da OpenAI para agentes
+### 📁 Estrutura do Projeto
+```
+liviaNEW3/
+├── agent.py              # 🤖 Agente principal + MCPs
+├── server.py             # 🌐 Servidor Slack Socket Mode
+├── tools/                # 🛠️ Ferramentas modulares
+│   ├── __init__.py       # Exportações
+│   ├── web_search.py     # 🔍 WebSearchTool
+│   └── image_vision.py   # 👁️ Processamento de imagens
+├── requirements.txt      # 📦 Dependências
+└── README.md            # 📖 Documentação
+```
+
+### 🔧 Componentes Principais
+- **agent.py**: Define a Livia, MCPs (Slack, Asana) e processamento Zapier
+- **server.py**: Servidor Socket Mode do Slack com proteção anti-loop
+- **tools/**: Módulo de ferramentas (WebSearch, ImageProcessor)
+- **OpenAI Agents SDK**: Orquestração de agentes inteligentes
+- **MCP Servers**: Comunicação com APIs externas (Slack, Asana)
+- **Zapier Remote MCP**: Automação via API Responses
+- **API Responses**: Nova API da OpenAI para agentes e automação
 
 ## Desenvolvimento
 
@@ -214,21 +251,51 @@ Para contribuir ou modificar:
 4. Teste thoroughly
 5. Submeta um pull request
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
-### Problemas Comuns
+### ❗ Problemas Comuns
 
-1. **"Agent not ready"**: Verifique se todas as variáveis de ambiente estão configuradas
-2. **SSL errors**: Certifique-se de que o `certifi` está instalado
-3. **MCP server fails**: Verifique se o npx está instalado e acessível
+1. **"Agent not ready"**:
+   - ✅ Verifique se todas as variáveis de ambiente estão configuradas
+   - ✅ Confirme se o OPENAI_API_KEY é válido
 
-### Logs
+2. **SSL errors**:
+   - ✅ Certifique-se de que o `certifi` está instalado
+   - ✅ Execute: `pip install --upgrade certifi`
+
+3. **MCP server fails**:
+   - ✅ Verifique se o npx está instalado: `npx --version`
+   - ✅ Teste: `npx -y @modelcontextprotocol/server-slack`
+
+4. **Respostas duplicadas/infinitas**:
+   - ✅ Sistema de proteção anti-loop implementado
+   - ✅ Bot ignora suas próprias mensagens automaticamente
+
+5. **Google Drive não encontra arquivos**:
+   - ✅ Use "buscar arquivo" em vez de "buscar pasta"
+   - ✅ Tente nomes parciais: "TargetGroup" para "TargetGroupIndex_BR2024"
+
+### 📊 Logs e Debug
 
 O sistema gera logs detalhados. Para debug mais verboso:
 
 ```python
 # Em agent.py, descomente:
 logging.getLogger("openai.agents").setLevel(logging.DEBUG)
+```
+
+### 🆘 Comandos de Teste
+
+```bash
+# Testar conectividade Slack
+python -c "from server import SlackSocketModeServer; print('Slack OK')"
+
+# Testar OpenAI
+python -c "from openai import OpenAI; OpenAI().models.list(); print('OpenAI OK')"
+
+# Testar MCP Servers
+npx -y @modelcontextprotocol/server-slack
+npx -y @roychri/mcp-server-asana
 ```
 
 ## Licença

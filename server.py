@@ -1,4 +1,9 @@
-# server.py - Slack Socket Mode Server for Livia Chatbot
+#!/usr/bin/env python3
+"""
+Slack Socket Mode Server for Livia Chatbot
+------------------------------------------
+Handles Slack events and manages bot responses with anti-loop protection.
+"""
 
 import os
 import asyncio
@@ -27,13 +32,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Global Variables ---
+# Global Variables
 slack_mcp_server: MCPServerStdio | None = None
 asana_mcp_server = None
 agent = None
 agent_lock = asyncio.Lock()
-processed_messages = set()  # Track processed message timestamps to avoid duplicates
-bot_user_id = "U057233T98A"  # Your bot's user ID - prevent processing bot's own messages
+processed_messages = set()
+bot_user_id = "U057233T98A"
 
 # --- Server Class ---
 class SlackSocketModeServer:
@@ -47,8 +52,6 @@ class SlackSocketModeServer:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {missing_vars}")
 
-        # Create SSL context using certifi
-        # Helps prevent certificate verification errors, especially on macOS
         try:
             ssl_context = ssl.create_default_context(cafile=certifi.where())
             logger.info(f"Using CA bundle from certifi: {certifi.where()}")
@@ -57,21 +60,17 @@ class SlackSocketModeServer:
             ssl_context = ssl.create_default_context()
             logger.warning("Falling back to default SSL context.")
 
-        # Create an AsyncWebClient instance with Bot Token and custom SSL context
         async_web_client = AsyncWebClient(
             token=os.environ["SLACK_BOT_TOKEN"],
-            ssl=ssl_context # Pass the SSL context here
+            ssl=ssl_context
         )
 
-        # Initialize AsyncApp by passing the custom client instance
-        # Ensures custom SSL settings are used for API calls
         self.app = AsyncApp(
-            client=async_web_client # Pass the client instead of the token directly
+            client=async_web_client
         )
 
-        # Initialize Async Socket Mode Handler using the App-Level Token
         self.socket_mode_handler = AsyncSocketModeHandler(
-            self.app, # Pass the app instance (containing the custom client)
+            self.app,
             os.environ["SLACK_APP_TOKEN"]
         )
         # Set up event handlers
@@ -133,7 +132,6 @@ class SlackSocketModeServer:
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
             return
 
-        # CRITICAL: Additional check to prevent processing bot's own responses
         if text and any(phrase in text.lower() for phrase in [
             "encontrei o arquivo", "você pode acessá-lo", "estou à disposição",
             "não consegui encontrar", "vou procurar", "aqui está"
@@ -222,21 +220,18 @@ class SlackSocketModeServer:
             event = body.get("event", {})
             logger.info(f"Received message event: {event}")
 
-            # CRITICAL: Ignore bot messages, empty text, or messages from the bot itself
             if (event.get("bot_id") or
                 not event.get("text") or
                 event.get("user") == bot_user_id):
                 logger.info("Ignoring bot message, empty text, or message from bot itself")
                 return
 
-            # CRITICAL: Check if message was already processed to prevent loops
             message_id = f"{event.get('channel')}_{event.get('ts')}"
             if message_id in processed_messages:
                 logger.info(f"Message {message_id} already processed, skipping")
                 return
             processed_messages.add(message_id)
 
-            # Clean old processed messages (keep only last 100)
             if len(processed_messages) > 100:
                 processed_messages.clear()
 
@@ -254,16 +249,12 @@ class SlackSocketModeServer:
                 logger.info("Not a thread reply, DM, or mention - ignoring")
                 return
 
-            # Skip processing mentions in message events if they're in threads
-            # (they'll be handled by app_mention event)
             if is_mention_in_text and thread_ts:
                 logger.info("Mention in thread detected, will be handled by app_mention event")
                 return
 
-            # If it's a mention in text but not in thread, handle it here
             if is_mention_in_text and not thread_ts:
                 logger.info("Detected mention in message text, processing as mention...")
-                # Clean the text
                 cleaned_text = text.replace(f"<@{bot_user_id}>", "").strip()
                 if not cleaned_text:
                     cleaned_text = "Hello! How can I help you?"
@@ -273,7 +264,7 @@ class SlackSocketModeServer:
                     text=cleaned_text,
                     say=say,
                     channel_id=channel_id,
-                    thread_ts_for_reply=event.get("ts"),  # Use message timestamp as thread
+                    thread_ts_for_reply=event.get("ts"),
                     image_urls=image_urls,
                     use_thread_history=False
                 )
@@ -306,12 +297,10 @@ class SlackSocketModeServer:
             event = body.get("event", {})
             logger.info(f"Received app mention event: {event}")
 
-            # CRITICAL: Ignore if message is from the bot itself
             if event.get("user") == bot_user_id:
                 logger.info("Ignoring app mention from bot itself")
                 return
 
-            # CRITICAL: Check if mention was already processed to prevent loops
             mention_id = f"mention_{event.get('channel')}_{event.get('ts')}"
             if mention_id in processed_messages:
                 logger.info(f"Mention {mention_id} already processed, skipping")

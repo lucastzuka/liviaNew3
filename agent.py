@@ -26,8 +26,6 @@ if env_path.exists():
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-# For detailed agent logs, uncomment:
-# logging.getLogger("openai.agents").setLevel(logging.DEBUG)
 
 
 async def create_asana_mcp_server() -> MCPServerStdio:
@@ -35,24 +33,18 @@ async def create_asana_mcp_server() -> MCPServerStdio:
 
     logger.info("Creating Asana MCP Server connection with token authentication...")
 
-    # Use the @roychri/mcp-server-asana package which accepts direct token authentication
-    # This avoids OAuth issues and "unusual activity" blocks
     asana_command = "npx"
     asana_args = ["-y", "@roychri/mcp-server-asana"]
-
-    # Your Asana access token
     asana_token = "2/1203422181648476/1210469533636732:cb4cc6cfe7871e7d0363b5e2061765d3"
 
     logger.info(f"Starting Asana MCP Server with command: {asana_command} {' '.join(asana_args)}")
 
-    # Initialize the Asana MCP Server connection via Standard I/O
     asana_server = MCPServerStdio(
         name="Asana MCP Server",
         params={
             "command": asana_command,
             "args": asana_args,
             "env": {
-                # Pass the token directly as environment variable
                 **os.environ,
                 "ASANA_ACCESS_TOKEN": asana_token
             },
@@ -65,29 +57,22 @@ async def create_asana_mcp_server() -> MCPServerStdio:
 async def create_slack_mcp_server() -> MCPServerStdio:
     """Creates and returns a Slack MCP Server instance using MCPServerStdio."""
 
-    # Verify required environment variables for the MCP server
     if "SLACK_BOT_TOKEN" not in os.environ:
         raise ValueError("SLACK_BOT_TOKEN environment variable is not set for MCP Server")
     if "SLACK_TEAM_ID" not in os.environ:
         raise ValueError("SLACK_TEAM_ID environment variable is not set for MCP Server")
 
-    # Command to run the Slack MCP server via npx
-    # Ensures the latest version is used without global installation
     slack_command = "npx -y @modelcontextprotocol/server-slack"
     logger.info(f"Attempting to start Slack MCP Server with command: {slack_command}")
 
-    # Initialize the MCP Server connection via Standard I/O
     slack_server = MCPServerStdio(
         name="Slack MCP Server",
         params={
-            "command": slack_command.split(" ")[0], # "npx"
-            "args": slack_command.split(" ")[1:],  # ["-y", "@modelcontextprotocol/server-slack"]
+            "command": slack_command.split(" ")[0],
+            "args": slack_command.split(" ")[1:],
             "env": {
-                # Pass necessary tokens/IDs to the MCP server process environment
                 "SLACK_BOT_TOKEN": os.environ["SLACK_BOT_TOKEN"],
                 "SLACK_TEAM_ID": os.environ["SLACK_TEAM_ID"],
-                # Optional: Limit accessible channels for the MCP server
-                # "SLACK_CHANNEL_IDS": "Cxxxx,Cyyyy",
             },
         },
     )
@@ -100,23 +85,17 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
 
     logger.info("Creating Livia - the Slack Chatbot Agent...")
 
-    # Create WebSearchTool for internet searches
-    web_search_tool = WebSearchTool(
-        search_context_size="medium"  # Options: "low", "medium", "high"
-    )
+    web_search_tool = WebSearchTool(search_context_size="medium")
 
-    # Prepare MCP servers list
     mcp_servers = [slack_server]
     server_descriptions = [f"'{slack_server.name}'"]
 
-    # Add Asana server if available
     if asana_server:
         mcp_servers.append(asana_server)
         server_descriptions.append(f"'{asana_server.name}'")
 
 
 
-    # Build instructions with available tools
     asana_tools_description = ""
     zapier_tools_description = ""
 
@@ -147,7 +126,6 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "  - NEVER use projects_any - always use projects=['project_id'] as array\n"
         )
 
-    # ✅ Zapier MCP integration is now active and configured
     zapier_tools_description = (
         "⚡ **Zapier Automation Tools** (ATIVO via Remote MCP):\n"
         "  - ✅ Google Drive: buscar, listar, criar e gerenciar arquivos e pastas\n"
@@ -169,7 +147,6 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
 
     agent = Agent(
         name="Livia",
-        # Instructions guiding the agent on how to behave and use tools
         instructions=(
             "You are Livia, an intelligent chatbot assistant for Slack. "
             "IMPORTANT: You should ONLY respond in threads where the bot was mentioned in the FIRST message of the thread. "
@@ -206,11 +183,8 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "- Always cite sources when providing information from web searches\n"
             "- You can help with general questions, provide information, and assist with Slack-related tasks"
         ),
-        # Specify the model to use - gpt-4.1-mini for cost efficiency with vision support
         model="gpt-4.1-mini",
-        # List of tools the agent can use
         tools=[web_search_tool],
-        # List of MCP servers the agent can use
         mcp_servers=mcp_servers,
     )
     servers_info = " and ".join(server_descriptions)
@@ -224,7 +198,6 @@ async def process_message_with_zapier(message: str, image_urls: Optional[List[st
 
     client = OpenAI()
 
-    # Prepare input
     if image_urls:
         input_content = [{"type": "input_text", "text": message}]
         for image_url in image_urls:
@@ -237,11 +210,8 @@ async def process_message_with_zapier(message: str, image_urls: Optional[List[st
     else:
         input_data = message
 
-    # ✅ Updated Zapier MCP configuration with correct credentials
     ZAPIER_MCP_URL = "https://mcp.zapier.com/api/mcp/s/196901ca-f828-4a37-ba99-383e7a618534/mcp"
     ZAPIER_MCP_TOKEN = "MTk2OTAxY2EtZjgyOC00YTM3LWJhOTktMzgzZTdhNjE4NTM0OjJkOWQ0MTFiLTk0YjktNDMyMi1hNTEwLTI4NjRiMmY1NWE0MQ=="
-
-    # Create response with Zapier MCP
     response = client.responses.create(
         model="gpt-4.1-mini",
         input=input_data,
@@ -263,8 +233,6 @@ async def process_message_with_zapier(message: str, image_urls: Optional[List[st
 async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None) -> str:
     """Runs the agent with the given message and optional image URLs, returns the final output."""
 
-    # ✅ Zapier MCP is now properly configured - re-enabling detection
-    # Check if message requires Zapier tools
     zapier_keywords = ["zapier", "google drive", "gmail", "notion", "trello", "automation", "workflow", "integrate", "drive", "arquivo", "pasta", "documento"]
     needs_zapier = any(keyword in message.lower() for keyword in zapier_keywords)
 
@@ -274,7 +242,6 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
             return await process_message_with_zapier(message, image_urls)
         except Exception as e:
             logger.warning(f"Zapier MCP failed, falling back to regular agent: {e}")
-            # Fall back to regular agent processing
 
     # Generate a trace ID for monitoring the agent's execution flow
     trace_id = gen_trace_id()
