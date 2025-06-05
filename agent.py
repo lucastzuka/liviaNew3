@@ -250,6 +250,9 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
     logger.info(f"MCP URL: {mcp_config['url']}")
     logger.info(f"MCP Server Label: {mcp_config['server_label']}")
     logger.info(f"Input message: {message}")
+    logger.info(f"Token length: {len(mcp_config['token'])} chars")
+    logger.info(f"Token starts with: {mcp_config['token'][:10]}...")
+    logger.info(f"Authorization header will be: 'Bearer {mcp_config['token'][:10]}...'")
 
     try:
         # Special handling for Everhour time tracking operations
@@ -283,7 +286,49 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
                         "require_approval": "never",
                         "allowed_tools": ["everhour_find_project", "everhour_add_time"],
                         "headers": {
-                            "Authorization": f"Bearer {mcp_config['token']}"
+                            "Authorization": f"Bearer {mcp_config['token'].strip()}"
+                        }
+                    }
+                ]
+            )
+
+        elif mcp_config["server_label"] == "zapier-gmail":
+            # Special handling for Gmail with optimized search and content limiting
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                input=input_data,
+                instructions=(
+                    "You are a Gmail specialist. Use the available Gmail tools to search and read emails.\n\n"
+                    "🔍 **STEP-BY-STEP APPROACH**:\n"
+                    "1. **First**: Use gmail_search_emails tool with search string 'in:inbox'\n"
+                    "2. **Then**: Use gmail_get_email tool to read the first email from results\n"
+                    "3. **Finally**: Summarize the email content\n\n"
+                    "📧 **SEARCH EXAMPLES**:\n"
+                    "- For latest emails: 'in:inbox'\n"
+                    "- For unread emails: 'is:unread'\n"
+                    "- For recent emails: 'newer_than:1d'\n"
+                    "- Combined: 'in:inbox newer_than:1d'\n\n"
+                    "📋 **RESPONSE FORMAT** (Portuguese):\n"
+                    "📧 **Último Email Recebido:**\n"
+                    "👤 **De:** [sender name and email]\n"
+                    "📝 **Assunto:** [subject line]\n"
+                    "📅 **Data:** [date received]\n"
+                    "📄 **Resumo:** [Brief 2-3 sentence summary of main content]\n\n"
+                    "⚠️ **IMPORTANT**:\n"
+                    "- Always use gmail_search_emails first to find emails\n"
+                    "- Then use gmail_get_email to read the specific email\n"
+                    "- Summarize content - don't return full email text\n"
+                    "- If search fails, try simpler search terms\n\n"
+                    "🎯 **GOAL**: Find and summarize the user's latest email efficiently."
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token'].strip()}"
                         }
                     }
                 ]
@@ -336,7 +381,40 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
         return response.output_text or "No response generated."
 
     except Exception as e:
+        error_message = str(e)
         logger.error(f"Error calling {mcp_config['name']}: {e}")
+
+        # Special handling for Gmail context window exceeded
+        if mcp_config["server_label"] == "zapier-gmail" and "context_length_exceeded" in error_message:
+            logger.warning("Gmail MCP context window exceeded, trying with simplified request")
+            try:
+                # Retry with more restrictive search and summarization
+                simplified_response = client.responses.create(
+                    model="gpt-4o-mini",
+                    input="Busque apenas o último email recebido na caixa de entrada e faça um resumo muito breve",
+                    instructions=(
+                        "You are a Gmail assistant. Search for the latest email in inbox using 'in:inbox' operator.\n"
+                        "CRITICAL: Return only a 2-sentence summary in Portuguese.\n"
+                        "Format: 'Último email de [sender] com assunto \"[subject]\". [Brief summary].'\n"
+                        "NEVER return full email content - only essential information."
+                    ),
+                    tools=[
+                        {
+                            "type": "mcp",
+                            "server_label": mcp_config["server_label"],
+                            "server_url": mcp_config["url"],
+                            "require_approval": "never",
+                            "headers": {
+                                "Authorization": f"Bearer {mcp_config['token']}"
+                            }
+                        }
+                    ]
+                )
+                return simplified_response.output_text or "Não foi possível acessar os emails no momento."
+            except Exception as retry_error:
+                logger.error(f"Gmail MCP retry also failed: {retry_error}")
+                return "❌ Não foi possível acessar os emails do Gmail no momento. O email pode ser muito grande para processar. Tente ser mais específico na busca."
+
         raise
 
 

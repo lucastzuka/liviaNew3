@@ -16,6 +16,10 @@ from slack_bolt.app.async_app import AsyncApp
 from slack_sdk.web.async_client import AsyncWebClient
 import ssl
 import certifi
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from agent import (
     create_slack_mcp_server,
