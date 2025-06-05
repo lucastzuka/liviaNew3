@@ -254,49 +254,46 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
     try:
         # Special handling for Everhour time tracking operations
         if mcp_config["server_label"] == "zapier-everhour":
+            # Add JSON requirement to input for structured response
+            json_input = f"{input_data}. Return the result as JSON."
+
             response = client.responses.create(
                 model="gpt-4.1-mini",
-                input=input_data,
+                input=json_input,
                 instructions=(
-                    "You are an Everhour time tracking specialist with access to MCP tools. "
-                    "🚨 **CRITICAL**: You MUST use the actual MCP tools - NEVER simulate or fake responses!\n\n"
-                    "🔧 **AVAILABLE MCP TOOLS**:\n"
-                    "- everhour_find_project: Find project by name\n"
-                    "- everhour_find_task: Find task by name within a project\n"
-                    "- everhour_add_time: Add time to a task (MAIN TOOL)\n\n"
-                    "🎯 **MANDATORY STEPS FOR ADD TIME**:\n"
-                    "1. **Use everhour_add_time tool** with exact parameters\n"
-                    "2. **Parameters required**: project_id, task_id, time, date, comment\n"
-                    "3. **Wait for real MCP response** - report actual results\n"
-                    "4. **If tool fails, report the exact error message**\n\n"
-                    "🔑 **PARAMETER FORMAT FOR everhour_add_time**:\n"
-                    "- project_id: 'ev:273391483277215' (with 'ev:' prefix)\n"
-                    "- task_id: Use exact ID from user (e.g., 'ev:273392685626466')\n"
-                    "- time: '1h', '2h', '30m' (NEVER '1:00' format)\n"
-                    "- date: Use CURRENT DATE in format 'YYYY-MM-DD' (check timezone!)\n"
-                    "- comment: Extract from user message or use 'Time tracking'\n\n"
-                    "🌍 **CRITICAL: VPN/TIMEZONE REQUIREMENTS**:\n"
-                    "- ✅ WORKING: VPN disabled, using local Brazilian timezone\n"
-                    "- ❌ FAILS: VPN enabled (wrong timezone/geolocation)\n"
-                    "- Format date as 'YYYY-MM-DD' using current local date\n"
-                    "- If user reports failures, suggest disabling VPN\n\n"
-                    "🚨 **FORBIDDEN BEHAVIORS**:\n"
-                    "- ❌ NEVER return fake JSON responses\n"
-                    "- ❌ NEVER say 'time was registered' without calling the tool\n"
-                    "- ❌ NEVER simulate success\n\n"
-                    "✅ **CORRECT BEHAVIOR**:\n"
-                    "- ✅ Call everhour_add_time with exact parameters\n"
-                    "- ✅ Report the actual response from the tool\n"
-                    "- ✅ If error occurs, show the real error message\n\n"
-                    "🎯 **GOAL**: Make REAL calls to everhour_add_time tool!"
+                    "You are an Everhour time tracking specialist. Use the everhour_add_time tool and return structured JSON.\n\n"
+                    "🎯 **CRITICAL INSTRUCTIONS**:\n"
+                    "1. **Use everhour_add_time tool** with exact parameters from user message\n"
+                    "2. **Extract IDs directly**: Look for 'ev:xxxxxxxxxx' format in user message\n"
+                    "3. **Time format**: '1h', '2h', '30m' (never '1:00')\n"
+                    "4. **Date**: Use today's date in 'YYYY-MM-DD' format\n"
+                    "5. **Return JSON response** with the results\n\n"
+                    "📋 **JSON Response Format**:\n"
+                    "{\n"
+                    "  \"success\": true/false,\n"
+                    "  \"task_id\": \"ev:xxxxxxxxxx\",\n"
+                    "  \"project_id\": \"ev:xxxxxxxxxx\",\n"
+                    "  \"time_added\": \"2h\",\n"
+                    "  \"date\": \"YYYY-MM-DD\",\n"
+                    "  \"comment\": \"user comment\",\n"
+                    "  \"error_message\": null or \"error details\"\n"
+                    "}\n\n"
+                    "✅ **EXAMPLE**:\n"
+                    "User: 'adicionar 2h na task ev:273393148295192 no projeto ev:273391483277215'\n"
+                    "1. Call: everhour_add_time(task_id='ev:273393148295192', project_id='ev:273391483277215', time='2h', date='2025-01-05', comment='Time tracking')\n"
+                    "2. Return: JSON with success status and details\n\n"
+                    "🎯 **GOAL**: Use MCP tool and return clear JSON response!"
                 ),
+                text={
+                    "format": {"type": "json_object"}
+                },
                 tools=[
                     {
                         "type": "mcp",
                         "server_label": mcp_config["server_label"],
                         "server_url": mcp_config["url"],
                         "require_approval": "never",
-                        "allowed_tools": ["everhour_find_project", "everhour_find_task", "everhour_add_time"],
+                        "allowed_tools": ["everhour_find_project", "everhour_add_time"],
                         "headers": {
                             "Authorization": f"Bearer {mcp_config['token']}"
                         }
@@ -305,9 +302,12 @@ async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls
             )
         else:
             # Regular MCP processing for other services (Asana, Google Drive, etc.)
+            # Add JSON requirement for structured responses
+            json_input = f"{input_data}. Return the result as JSON with success status and details."
+
             response = client.responses.create(
                 model="gpt-4.1-mini",
-                input=input_data,
+                input=json_input,
                 instructions=(
                     f"You are an intelligent assistant with access to {mcp_config['name']} via MCP tools. "
                     "Follow these guidelines for optimal performance:\n\n"
