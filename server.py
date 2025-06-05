@@ -168,7 +168,8 @@ class SlackSocketModeServer:
     # --- Streaming Message Processing & Response Method ---
     async def _process_and_respond_streaming(
         self, text: str, say: slack_bolt.Say, channel_id: str, thread_ts_for_reply: Optional[str] = None,
-        image_urls: Optional[List[str]] = None, use_thread_history: bool = True, user_id: str = None
+        image_urls: Optional[List[str]] = None, audio_files: Optional[List[dict]] = None,
+        use_thread_history: bool = True, user_id: str = None
     ):
         """Sends message to agent and posts streaming response to Slack."""
         global agent
@@ -193,12 +194,35 @@ class SlackSocketModeServer:
 
         context_input = text
 
+        # Process audio files if any
+        if audio_files:
+            logger.info(f"Processing {len(audio_files)} audio file(s)...")
+            transcriptions = []
+
+            for audio_file in audio_files:
+                logger.info(f"Transcribing audio file: {audio_file['name']}")
+                transcription = await self._transcribe_audio_file(audio_file)
+
+                if transcription:
+                    transcriptions.append(f"🎵 **Áudio '{audio_file['name']}'**: {transcription}")
+                    logger.info(f"Audio transcribed: {audio_file['name']} -> {len(transcription)} chars")
+                else:
+                    transcriptions.append(f"❌ **Erro ao transcrever áudio '{audio_file['name']}'**")
+                    logger.warning(f"Failed to transcribe audio: {audio_file['name']}")
+
+            # Combine transcriptions with text
+            if transcriptions:
+                if text:
+                    context_input = f"{text}\n\n" + "\n\n".join(transcriptions)
+                else:
+                    context_input = "\n\n".join(transcriptions)
+
         # Use thread history as context if available
         if use_thread_history and thread_ts_for_reply:
             logger.info(f"Fetching history for thread {thread_ts_for_reply}...")
             full_history = await self._fetch_thread_history(channel_id, thread_ts_for_reply)
             if full_history:
-                context_input = full_history + f"\n\nLatest message: {text}"
+                context_input = full_history + f"\n\nLatest message: {context_input}"
             else:
                 logger.warning("Failed to fetch thread history.")
 
@@ -342,6 +366,86 @@ class SlackSocketModeServer:
         """Extract image URLs from Slack event."""
         return ImageProcessor.extract_image_urls(event)
 
+    def _extract_audio_files(self, event: dict) -> List[dict]:
+        """Extract audio files from Slack event."""
+        audio_files = []
+
+        if "files" in event:
+            for file in event["files"]:
+                mimetype = file.get("mimetype", "")
+                filename = file.get("name", "").lower()
+
+                # Check for audio file types supported by OpenAI
+                audio_extensions = (".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm", ".ogg", ".flac")
+                audio_mimetypes = ("audio/", "video/mp4", "video/mpeg", "video/webm")
+
+                if (any(mimetype.startswith(mt) for mt in audio_mimetypes) or
+                    filename.endswith(audio_extensions)):
+
+                    # Check file size (OpenAI limit is 25MB)
+                    file_size = file.get("size", 0)
+                    if file_size > 25 * 1024 * 1024:  # 25MB in bytes
+                        logger.warning(f"Audio file {filename} is too large ({file_size} bytes). Max size is 25MB.")
+                        continue
+
+                    audio_files.append({
+                        "id": file.get("id"),
+                        "name": filename,
+                        "mimetype": mimetype,
+                        "url_private": file.get("url_private"),
+                        "size": file_size
+                    })
+
+        return audio_files
+
+    async def _transcribe_audio_file(self, audio_file: dict) -> Optional[str]:
+        """Download and transcribe audio file from Slack."""
+        try:
+            import tempfile
+            import aiohttp
+            from openai import OpenAI
+
+            # Download the audio file
+            headers = {"Authorization": f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(audio_file["url_private"], headers=headers) as response:
+                    if response.status != 200:
+                        logger.error(f"Failed to download audio file: {response.status}")
+                        return None
+
+                    audio_data = await response.read()
+
+            # Create temporary file for transcription
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{audio_file['name'].split('.')[-1]}") as temp_file:
+                temp_file.write(audio_data)
+                temp_file_path = temp_file.name
+
+            try:
+                # Transcribe using OpenAI
+                client = OpenAI()
+
+                with open(temp_file_path, "rb") as audio_file_obj:
+                    transcription = client.audio.transcriptions.create(
+                        model="gpt-4o-transcribe",
+                        file=audio_file_obj,
+                        response_format="text",
+                        prompt="Transcreva o áudio em português brasileiro. Mantenha pontuação e formatação adequadas."
+                    )
+
+                logger.info(f"Audio transcribed successfully: {len(transcription)} characters")
+                return transcription
+
+            finally:
+                # Clean up temporary file
+                import os as temp_os
+                if temp_os.path.exists(temp_file_path):
+                    temp_os.unlink(temp_file_path)
+
+        except Exception as e:
+            logger.error(f"Error transcribing audio: {e}", exc_info=True)
+            return None
+
     async def _process_slack_image(self, image_url: str) -> Optional[str]:
         """Process Slack private image URL to make it accessible."""
         return await ImageProcessor.process_slack_image(image_url)
@@ -389,10 +493,18 @@ class SlackSocketModeServer:
             event = body.get("event", {})
 
 
-            if (event.get("bot_id") or
-                not event.get("text") or
-                event.get("user") == bot_user_id):
-                logger.info("Ignoring bot message, empty text, or message from bot itself")
+            # Check if message has audio files even if text is empty
+            audio_files = self._extract_audio_files(event)
+            text = event.get("text", "").strip()
+
+            # Skip bot messages or messages from the bot itself
+            if (event.get("bot_id") or event.get("user") == bot_user_id):
+                logger.info("Ignoring bot message or message from bot itself")
+                return
+
+            # Skip if no text AND no audio files
+            if not text and not audio_files:
+                logger.info("Ignoring message with no text and no audio files")
                 return
 
             # DEVELOPMENT SECURITY: Early channel validation
@@ -446,12 +558,14 @@ class SlackSocketModeServer:
 
             if should_process:
                 image_urls = self._extract_image_urls(event)
+                audio_files = self._extract_audio_files(event)
                 await self._process_and_respond_streaming(
                     text=text,
                     say=say,
                     channel_id=channel_id,
                     thread_ts_for_reply=thread_ts,
                     image_urls=image_urls,
+                    audio_files=audio_files,
                     user_id=event.get("user")
                 )
 
@@ -498,11 +612,17 @@ class SlackSocketModeServer:
                 text = re.sub(r'<@[A-Z0-9]+>', '', text).strip()
                 logger.info(f"Fallback cleaned text: '{text}'")
 
-            if not text:
+            # Check for audio files even if no text
+            image_urls = self._extract_image_urls(event)
+            audio_files = self._extract_audio_files(event)
+
+            # If no text but has audio files, set a default message
+            if not text and audio_files:
+                text = "🎵 Processando áudio..."
+            elif not text:
                 text = "Hello! How can I help you?"
 
-            logger.info(f"Processing mention with text: '{text}'")
-            image_urls = self._extract_image_urls(event)
+            logger.info(f"Processing mention with text: '{text}', audio files: {len(audio_files)}")
 
             # Mark this mention as processed BEFORE processing to prevent duplicates
             processed_messages.add(mention_id)
@@ -518,9 +638,25 @@ class SlackSocketModeServer:
                 channel_id=channel_id,
                 thread_ts_for_reply=thread_ts,
                 image_urls=image_urls,
+                audio_files=audio_files,
                 use_thread_history=False,  # Don't use history for initial mentions
                 user_id=event.get("user")
             )
+
+        @self.app.event("file_shared")
+        async def handle_file_shared_events(body: Dict[str, Any]):
+            """Handle file shared events - acknowledge to prevent warnings."""
+            logger.info("File shared event acknowledged")
+
+        @self.app.event("app_home_opened")
+        async def handle_app_home_opened_events(body: Dict[str, Any]):
+            """Handle app home opened events - acknowledge to prevent warnings."""
+            logger.info("App home opened event acknowledged")
+
+        @self.app.event("file_change")
+        async def handle_file_change_events(body: Dict[str, Any]):
+            """Handle file change events - acknowledge to prevent warnings."""
+            logger.info("File change event acknowledged")
 
     # --- Server Start Method ---
     async def start(self):

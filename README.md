@@ -9,6 +9,7 @@ Livia é um chatbot inteligente para Slack que usa **OpenAI Agents SDK** e **API
 - **🛠️ Ferramentas Avançadas**:
   - 🔍 **Web Search Tool** - Busca informações atuais na internet, notícias e fatos
   - 📄 **File Search Tool** - Busca em documentos e base de conhecimento com citações
+  - 🎵 **Audio Transcription** - Transcrição de áudios enviados pelo Slack para texto
   - 👁️ **Image Vision** - Análise de imagens enviadas via Slack ou URLs
   - 📋 **Asana Integration** - Gerenciamento de projetos e tarefas via MCP
   - ⚡ **Zapier Automation** - Integração com Google Drive, Gmail e outras ferramentas
@@ -224,13 +225,19 @@ python server.py
    - **Formatos suportados**: PNG, JPEG, WEBP, GIF (não animado)
    - Livia analisará automaticamente e descreverá o conteúdo
 
-5. **Busque em documentos** da base de conhecimento:
+5. **Envie áudios** para transcrição:
+   - **Gravação direta**: Grave um áudio no Slack
+   - **Upload de arquivo**: Envie arquivos .mp3, .wav, .m4a, .ogg, .flac, .webm
+   - **Limite**: 25MB por arquivo
+   - Livia transcreverá automaticamente e processará o texto
+
+6. **Busque em documentos** da base de conhecimento:
    ```
    @Livia Qual o hex da cor principal da Electrolux?
    @Livia Procure informações sobre guidelines de marca
    ```
 
-6. **Use comandos naturais com STREAMING**:
+7. **Use comandos naturais com STREAMING**:
 
    **🔍 Busca na Web (com streaming):**
    - "Pesquise informações sobre IA na internet"
@@ -241,6 +248,11 @@ python server.py
    - "Qual o hex da cor principal da Electrolux?"
    - "Procure informações sobre guidelines de marca"
    - "Busque dados sobre políticas da empresa"
+
+   **🎵 Transcrição de Áudio (com streaming):**
+   - [Enviar áudio] "Oi Livia, qual a cotação do dólar hoje?"
+   - [Gravar mensagem] "Agende uma reunião para amanhã às 15h"
+   - [Upload de arquivo] "Transcreva esta gravação da reunião"
 
    **👁️ Análise de Imagens (com streaming):**
    - "Analise esta imagem" (com upload de imagem)
