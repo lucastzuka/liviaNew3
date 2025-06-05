@@ -15,7 +15,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 # OpenAI Agents SDK components
-from agents import Agent, Runner, gen_trace_id, trace
+from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool
 from agents.mcp import MCPServerStdio
 
 # Load environment variables from .env file
@@ -64,9 +64,14 @@ async def create_slack_mcp_server() -> MCPServerStdio:
 
 
 async def create_agent(slack_server: MCPServerStdio) -> Agent:
-    """Creates and returns Livia, an OpenAI Agent configured to use the Slack MCP server."""
+    """Creates and returns Livia, an OpenAI Agent configured to use the Slack MCP server and tools."""
 
     logger.info("Creating Livia - the Slack Chatbot Agent...")
+
+    # Create WebSearchTool for internet searches
+    web_search_tool = WebSearchTool(
+        search_context_size="medium"  # Options: "low", "medium", "high"
+    )
 
     agent = Agent(
         name="Livia",
@@ -74,23 +79,30 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
         instructions=(
             "You are Livia, an intelligent chatbot assistant for Slack. "
             "IMPORTANT: You should ONLY respond in threads where the bot was mentioned in the FIRST message of the thread. "
-            "You have access to Slack workspace tools via the MCP Server:\n"
-            "- List channels and users\n"
-            "- Post messages and reply to threads\n"
-            "- Add reactions to messages\n"
-            "- Get channel history and user information\n"
-            "- Analyze images uploaded to Slack or provided via URLs\n\n"
-            "Be helpful, concise, and professional in your responses. "
-            "Ask for clarification if needed. "
-            "When processing images, describe what you see and provide relevant insights. "
-            "You can help with general questions, provide information, and assist with Slack-related tasks."
+            "You have access to multiple powerful tools:\n\n"
+            "🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers\n"
+            "📱 **Slack Tools** (via MCP Server):\n"
+            "  - List channels and users\n"
+            "  - Post messages and reply to threads\n"
+            "  - Add reactions to messages\n"
+            "  - Get channel history and user information\n"
+            "  - Analyze images uploaded to Slack or provided via URLs\n\n"
+            "**Guidelines:**\n"
+            "- Use web search when you need current information, recent news, or facts you don't know\n"
+            "- Be helpful, concise, and professional in your responses\n"
+            "- Ask for clarification if needed\n"
+            "- When processing images, describe what you see and provide relevant insights\n"
+            "- Always cite sources when providing information from web searches\n"
+            "- You can help with general questions, provide information, and assist with Slack-related tasks"
         ),
         # Specify the model to use OpenAI Responses API
         model="gpt-4o",
+        # List of tools the agent can use
+        tools=[web_search_tool],
         # List of MCP servers the agent can use
         mcp_servers=[slack_server],
     )
-    logger.info(f"Agent '{agent.name}' created with access to '{slack_server.name}'.")
+    logger.info(f"Agent '{agent.name}' created with WebSearchTool and access to '{slack_server.name}'.")
     return agent
 
 

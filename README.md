@@ -6,10 +6,9 @@ Livia é um chatbot inteligente para Slack que usa OpenAI Agents SDK e API Respo
 
 - **Resposta Inteligente**: Responde apenas em threads que começam com uma menção ao bot
 - **Ferramentas Avançadas**:
-  - 🔍 Web Search - Busca informações na internet
-  - 📁 File Search - Busca e análise de arquivos
-  - 👁️ Image Vision - Análise de imagens enviadas via Slack ou URLs
-  - 🔧 MCP Tools - Ferramentas do Model Context Protocol para Slack
+  - 🔍 **Web Search Tool** - Busca informações atuais na internet, notícias e fatos
+  - 👁️ **Image Vision** - Análise de imagens enviadas via Slack ou URLs
+  - 🔧 **MCP Tools** - Ferramentas do Model Context Protocol para Slack
 - **OpenAI Agents SDK**: Usa a mais recente tecnologia de agentes da OpenAI
 - **API Responses**: Utiliza a nova API Responses da OpenAI (não Chat Completions)
 
@@ -134,9 +133,10 @@ python server.py
    - Livia analisará automaticamente
 
 4. **Use comandos naturais**:
-   - "Pesquise informações sobre IA"
+   - "Pesquise informações sobre IA na internet"
+   - "Qual é a cotação do dólar hoje?"
+   - "Busque notícias recentes sobre tecnologia"
    - "Analise esta imagem"
-   - "Busque arquivos sobre vendas"
 
 ## Arquitetura
 
