@@ -43,7 +43,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-gdrive",
         "url": "https://mcp.zapier.com/api/mcp/s/196901ca-f828-4a37-ba99-383e7a618534/mcp",
         "token": "MTk2OTAxY2EtZjgyOC00YTM3LWJhOTktMzgzZTdhNjE4NTM0OjJkOWQ0MTFiLTk0YjktNDMyMi1hNTEwLTI4NjRiMmY1NWE0MQ==",
-        "keywords": ["google", "drive"],
+        "keywords": ["google drive", "drive"],
         "description": "📁 **Google Drive**: buscar, listar, criar e gerenciar arquivos e pastas"
     },
     "everhour": {
@@ -147,9 +147,9 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
         + "\n".join(zapier_descriptions) + "\n"
         "**Como usar (keywords simplificadas):**\n"
         "  - Para Asana: use 'asana'\n"
-        "  - Para Google Drive: use 'google' ou 'drive'\n"
+        "  - Para Google Docs: use 'docs', 'google docs', 'documento'\n"
+        "  - Para Google Drive: use 'drive', 'arquivo', 'pasta'\n"
         "  - Para Everhour: use 'everhour', 'tempo', 'time', 'horas'\n"
-        "  - Para Google Docs: use 'docs'\n"
         "  - Para Gmail: use 'gmail'\n"
         "  - Para Google Calendar: use 'calendar'\n"
         "  - Para Slack Externo: use 'slack'\n"
@@ -354,7 +354,7 @@ def detect_zapier_mcp_needed(message: str) -> Optional[str]:
     message_lower = message.lower()
 
     # Priority order: More specific services first to avoid conflicts
-    priority_order = ["everhour", "asana", "google_drive", "google_docs", "gmail", "google_calendar", "slack_external"]
+    priority_order = ["everhour", "asana", "google_docs", "google_drive", "gmail", "google_calendar", "slack_external"]
 
     for mcp_key in priority_order:
         if mcp_key in ZAPIER_MCPS:
