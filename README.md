@@ -128,15 +128,50 @@ python server.py
 2. **Continue a conversa na thread** - Livia responderá apenas em threads que começaram com uma menção
 
 3. **Envie imagens** para análise:
-   - Faça upload de uma imagem
-   - Ou envie um link de imagem
-   - Livia analisará automaticamente
+   - **Upload direto**: Faça upload de uma imagem no Slack
+   - **Link de imagem**: Cole um link de imagem na conversa
+   - **Formatos suportados**: PNG, JPEG, WEBP, GIF (não animado)
+   - Livia analisará automaticamente e descreverá o conteúdo
 
 4. **Use comandos naturais**:
    - "Pesquise informações sobre IA na internet"
    - "Qual é a cotação do dólar hoje?"
    - "Busque notícias recentes sobre tecnologia"
-   - "Analise esta imagem"
+   - "Analise esta imagem" (com upload de imagem)
+   - "O que você vê nesta foto?" (com link de imagem)
+
+### 6. Análise de Imagens com IA
+
+A Livia possui capacidades avançadas de visão computacional usando o modelo **gpt-4.1-mini** para análise de imagens:
+
+#### **Como Usar:**
+
+1. **Upload de Imagem**:
+   - Faça upload de uma imagem diretamente no Slack
+   - Mencione @Livia ou continue uma conversa existente
+   - Livia analisará automaticamente a imagem
+
+2. **Link de Imagem**:
+   - Cole um link de imagem na conversa
+   - Formatos suportados: `https://exemplo.com/imagem.jpg`
+   - Livia detectará e analisará automaticamente
+
+#### **Formatos Suportados:**
+- ✅ PNG (.png)
+- ✅ JPEG (.jpg, .jpeg)
+- ✅ WEBP (.webp)
+- ✅ GIF não animado (.gif)
+
+#### **Exemplos de Análise:**
+- **Objetos e Pessoas**: "Vejo uma pessoa usando óculos de sol..."
+- **Texto em Imagens**: "A imagem contém o texto 'Bem-vindos'..."
+- **Cores e Composição**: "A imagem tem tons predominantemente azuis..."
+- **Contexto e Situação**: "Esta parece ser uma foto de um escritório..."
+
+#### **Limitações:**
+- Tamanho máximo: 50MB por imagem
+- Não processa GIFs animados
+- Melhor qualidade com imagens claras e bem iluminadas
 
 ## Arquitetura
 

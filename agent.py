@@ -81,22 +81,23 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
             "IMPORTANT: You should ONLY respond in threads where the bot was mentioned in the FIRST message of the thread. "
             "You have access to multiple powerful tools:\n\n"
             "🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers\n"
+            "👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs\n"
             "📱 **Slack Tools** (via MCP Server):\n"
             "  - List channels and users\n"
             "  - Post messages and reply to threads\n"
             "  - Add reactions to messages\n"
-            "  - Get channel history and user information\n"
-            "  - Analyze images uploaded to Slack or provided via URLs\n\n"
+            "  - Get channel history and user information\n\n"
             "**Guidelines:**\n"
             "- Use web search when you need current information, recent news, or facts you don't know\n"
+            "- When users upload images or send image URLs, analyze them and provide detailed descriptions\n"
+            "- For images, describe what you see including objects, people, text, colors, and context\n"
             "- Be helpful, concise, and professional in your responses\n"
             "- Ask for clarification if needed\n"
-            "- When processing images, describe what you see and provide relevant insights\n"
             "- Always cite sources when providing information from web searches\n"
             "- You can help with general questions, provide information, and assist with Slack-related tasks"
         ),
-        # Specify the model to use OpenAI Responses API
-        model="gpt-4o",
+        # Specify the model to use - gpt-4.1-mini for cost efficiency with vision support
+        model="gpt-4.1-mini",
         # List of tools the agent can use
         tools=[web_search_tool],
         # List of MCP servers the agent can use
@@ -121,11 +122,27 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
         # Start tracing for the agent workflow
         with trace(workflow_name="Livia Slack Agent Workflow", trace_id=trace_id):
             # Prepare input with images if provided
-            input_data = message
             if image_urls:
-                # Add image context to the message
-                image_context = "\n\nImages to analyze:\n" + "\n".join(f"- {url}" for url in image_urls)
-                input_data = message + image_context
+                # Create input with both text and images for vision processing
+                input_content = [
+                    {"type": "input_text", "text": message}
+                ]
+
+                # Add each image to the input
+                for image_url in image_urls:
+                    input_content.append({
+                        "type": "input_image",
+                        "image_url": image_url,
+                        "detail": "low"  # Use low detail for cost efficiency
+                    })
+
+                input_data = [{
+                    "role": "user",
+                    "content": input_content
+                }]
+            else:
+                # Text-only input
+                input_data = message
 
             # Execute the agent with the input message
             # Runner.run handles the interaction loop between the LLM and tools (MCP server)
