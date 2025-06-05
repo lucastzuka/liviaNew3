@@ -132,6 +132,10 @@ class SlackSocketModeServer:
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
             return
 
+        # CRITICAL SECURITY: Store the original channel for validation
+        original_channel_id = channel_id
+        logger.info(f"SECURITY: Processing message in channel {original_channel_id}")
+
         if text and any(phrase in text.lower() for phrase in [
             "encontrei o arquivo", "você pode acessá-lo", "estou à disposição",
             "não consegui encontrar", "vou procurar", "aqui está"
@@ -162,12 +166,14 @@ class SlackSocketModeServer:
 
                 # Delegate processing to the agent with image support
                 response = await process_message(agent, context_input, processed_image_urls)
-                # Post the agent's response back to Slack
-                await say(text=str(response), channel=channel_id, thread_ts=thread_ts_for_reply)
-                logger.info("Livia responded successfully.")
+
+                # CRITICAL SECURITY: Always respond in the original channel
+                logger.info(f"SECURITY: Sending response to original channel {original_channel_id}")
+                await say(text=str(response), channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                logger.info(f"Livia responded successfully in channel {original_channel_id}")
             except Exception as e:
                 logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
-                await say(text=f"Sorry, I encountered an error: {str(e)}", channel=channel_id, thread_ts=thread_ts_for_reply)
+                await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
 
     def _extract_image_urls(self, event: Dict[str, Any]) -> List[str]:
         """Extract image URLs from Slack event."""
