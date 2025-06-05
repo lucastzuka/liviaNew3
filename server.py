@@ -19,7 +19,6 @@ import certifi
 
 from agent import (
     create_slack_mcp_server,
-    create_asana_mcp_server,
     create_agent,
     process_message,
     MCPServerStdio,
@@ -34,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 # Global Variables
 slack_mcp_server: MCPServerStdio | None = None
-asana_mcp_server = None
 agent = None
 agent_lock = asyncio.Lock()
 processed_messages = set()
@@ -55,7 +53,6 @@ async def is_channel_allowed(channel_id: str, user_id: str, app_client) -> bool:
 
     # Check if it's the allowed public channel
     if channel_id in ALLOWED_CHANNELS:
-        logger.info(f"SECURITY: Channel {channel_id} is in whitelist - ALLOWED")
         return True
 
     # Check if it's a DM with an allowed user
@@ -65,14 +62,12 @@ async def is_channel_allowed(channel_id: str, user_id: str, app_client) -> bool:
             channel_info = await app_client.conversations_info(channel=channel_id)
             if channel_info["ok"] and channel_info["channel"]["is_im"]:
                 ALLOWED_DM_CHANNELS.add(channel_id)  # Cache DM channel ID
-                logger.info(f"SECURITY: DM channel {channel_id} with allowed user {user_id} - ALLOWED")
                 return True
         except Exception as e:
             logger.error(f"SECURITY: Error checking channel info for {channel_id}: {e}")
 
     # Check if it's a cached DM channel
     if channel_id in ALLOWED_DM_CHANNELS:
-        logger.info(f"SECURITY: Cached DM channel {channel_id} - ALLOWED")
         return True
 
     logger.warning(f"SECURITY: Channel {channel_id} with user {user_id} - BLOCKED")
@@ -177,13 +172,11 @@ class SlackSocketModeServer:
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
             return
 
-        # CRITICAL SECURITY: Store the original channel for validation
+        # Store the original channel for validation
         original_channel_id = channel_id
-        logger.info(f"SECURITY: Processing message in channel {original_channel_id}")
 
-        # DEVELOPMENT SECURITY: Check if channel is allowed
+        # Check if channel is allowed
         if not await is_channel_allowed(channel_id, user_id or "unknown", self.app.client):
-            logger.error(f"SECURITY VIOLATION: Blocked response to unauthorized channel {channel_id}")
             return  # Silently ignore unauthorized channels
 
         if text and any(phrase in text.lower() for phrase in [
@@ -217,10 +210,10 @@ class SlackSocketModeServer:
                 # Delegate processing to the agent with image support
                 response = await process_message(agent, context_input, processed_image_urls)
 
-                # CRITICAL SECURITY: Always respond in the original channel
-                logger.info(f"SECURITY: Sending response to original channel {original_channel_id}")
+                # Always respond in the original channel
+                logger.info(f"USER REQUEST: {context_input}")
+                logger.info(f"BOT RESPONSE: {response}")
                 await say(text=str(response), channel=original_channel_id, thread_ts=thread_ts_for_reply)
-                logger.info(f"Livia responded successfully in channel {original_channel_id}")
             except Exception as e:
                 logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
                 await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
@@ -274,7 +267,7 @@ class SlackSocketModeServer:
         async def handle_message_events(body: Dict[str, Any], say: slack_bolt.Say):
             """Handle message events - only respond in threads that started with a mention."""
             event = body.get("event", {})
-            logger.info(f"Received message event: {event}")
+
 
             if (event.get("bot_id") or
                 not event.get("text") or
@@ -346,7 +339,7 @@ class SlackSocketModeServer:
         async def handle_app_mentions(body: Dict[str, Any], say: slack_bolt.Say):
             """Handle app mentions - start new threads or respond in existing ones."""
             event = body.get("event", {})
-            logger.info(f"Received app mention event: {event}")
+
 
             if event.get("user") == "U057233T98A":  # Bot user ID
                 logger.info("Ignoring app mention from bot itself")
@@ -359,11 +352,13 @@ class SlackSocketModeServer:
                 logger.warning(f"SECURITY: Blocked app mention from unauthorized channel {channel_id}")
                 return
 
+            # Create unique ID for this mention to prevent duplicates
             mention_id = f"mention_{event.get('channel')}_{event.get('ts')}"
+
+            # Check if we already processed this specific mention
             if mention_id in processed_messages:
                 logger.info(f"Mention {mention_id} already processed, skipping")
                 return
-            processed_messages.add(mention_id)
 
             text = event.get("text", "").strip()
             thread_ts = event.get("thread_ts") or event.get("ts")  # Use message ts if no thread
@@ -388,6 +383,15 @@ class SlackSocketModeServer:
 
             logger.info(f"Processing mention with text: '{text}'")
             image_urls = self._extract_image_urls(event)
+
+            # Mark this mention as processed BEFORE processing to prevent duplicates
+            processed_messages.add(mention_id)
+
+            # Clean up old processed messages to prevent memory issues
+            if len(processed_messages) > 100:
+                processed_messages.clear()
+                logger.info("Cleared processed messages cache")
+
             await self._process_and_respond(
                 text=text,
                 say=say,
@@ -407,7 +411,7 @@ class SlackSocketModeServer:
 # --- Agent Initialization and Cleanup Functions ---
 async def initialize_agent():
     """Initializes the global agent and MCP server instances."""
-    global slack_mcp_server, asana_mcp_server, agent
+    global slack_mcp_server, agent
 
     logger.info("Initializing Livia Slack MCP Server and Agent...")
 
@@ -416,19 +420,8 @@ async def initialize_agent():
         slack_mcp_server = await create_slack_mcp_server()
         await slack_mcp_server.__aenter__()  # Start the MCP server context
 
-        # Try to create and start the Asana MCP server (optional)
-        asana_mcp_server = None
-        try:
-            logger.info("Initializing Asana MCP Server...")
-            asana_mcp_server = await create_asana_mcp_server()
-            await asana_mcp_server.__aenter__()  # Start the Asana MCP server context
-            logger.info("Asana MCP Server successfully initialized.")
-        except Exception as e:
-            logger.warning(f"Failed to initialize Asana MCP Server (optional): {e}")
-            asana_mcp_server = None
-
-        # Create the agent with the MCP servers (Zapier is now integrated via Remote MCP)
-        agent = await create_agent(slack_mcp_server, asana_mcp_server)
+        # Create the agent with the MCP server (Zapier Asana is integrated via Remote MCP)
+        agent = await create_agent(slack_mcp_server)
 
         logger.info("Livia agent successfully initialized.")
 
@@ -439,7 +432,7 @@ async def initialize_agent():
 
 async def cleanup_agent():
     """Cleans up the MCP server resources."""
-    global slack_mcp_server, asana_mcp_server, agent
+    global slack_mcp_server, agent
 
     logger.info("Cleaning up Livia agent resources...")
 
@@ -451,15 +444,6 @@ async def cleanup_agent():
             logger.error(f"Error cleaning up Slack MCP server: {e}", exc_info=True)
         finally:
             slack_mcp_server = None
-
-    if asana_mcp_server:
-        try:
-            await asana_mcp_server.__aexit__(None, None, None)
-            logger.info("Asana MCP server cleaned up.")
-        except Exception as e:
-            logger.error(f"Error cleaning up Asana MCP server: {e}", exc_info=True)
-        finally:
-            asana_mcp_server = None
 
     agent = None
     logger.info("Agent cleanup completed.")

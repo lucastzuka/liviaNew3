@@ -7,7 +7,6 @@ Responds only in threads that mention the bot in the first message.
 Includes tools: file_search, web_search, image vision, and MCP tools.
 """
 
-import asyncio
 import os
 import logging
 from pathlib import Path
@@ -28,36 +27,78 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
-# TEMPORARILY COMMENTED FOR TESTING
-# async def create_asana_mcp_server() -> MCPServerStdio:
-#     """Creates and returns an Asana MCP Server instance using @roychri/mcp-server-asana with token authentication."""
+# ===== ZAPIER MCP CONFIGURATION =====
+# Centralized configuration for all Zapier MCP integrations
+ZAPIER_MCPS = {
+    "asana": {
+        "name": "Zapier Asana MCP",
+        "server_label": "zapier-asana",
+        "url": "https://mcp.zapier.com/api/mcp/s/867dc3af-2aa3-45f0-b872-61f08060faa2/mcp",
+        "token": "ODY3ZGMzYWYtMmFhMy00NWYwLWI4NzItNjFmMDgwNjBmYWEyOjZhOGQ3YzRmLWRhZTQtNGRmMS1iY2JlLWJkNjJhM2MwM2YxYw==",
+        "keywords": ["asana"],
+        "description": "📋 **Asana**: gerenciar projetos, tarefas e workspaces"
+    },
+    "google_drive": {
+        "name": "Zapier Google Drive MCP",
+        "server_label": "zapier-gdrive",
+        "url": "https://mcp.zapier.com/api/mcp/s/196901ca-f828-4a37-ba99-383e7a618534/mcp",
+        "token": "MTk2OTAxY2EtZjgyOC00YTM3LWJhOTktMzgzZTdhNjE4NTM0OjJkOWQ0MTFiLTk0YjktNDMyMi1hNTEwLTI4NjRiMmY1NWE0MQ==",
+        "keywords": ["google", "drive"],
+        "description": "📁 **Google Drive**: buscar, listar, criar e gerenciar arquivos e pastas"
+    },
+    "everhour": {
+        "name": "Zapier Everhour MCP",
+        "server_label": "zapier-everhour",
+        "url": "https://mcp.zapier.com/api/mcp/s/66bdad6b-b992-46ae-8682-908de2721485/mcp",
+        "token": "NjZiZGFkNmItYjk5Mi00NmFlLTg2ODItOTA4ZGUyNzIxNDg1OmY5NjA0MzQzLTRjNjEtNGQ3Yy05MGIzLTk1MDE3MWZlM2FiNw==",
+        "keywords": ["everhour", "tempo", "time", "horas", "timesheet"],
+        "description": "⏰ **Everhour**: controle de tempo, timesheet e rastreamento de horas"
+    },
+    "google_docs": {
+        "name": "Zapier Google Docs MCP",
+        "server_label": "zapier-gdocs",
+        "url": "https://mcp.zapier.com/api/mcp/s/efb9e233-c3e3-4dff-9ac0-b77be2ee0d98/mcp",
+        "token": "ZWZiOWUyMzMtYzNlMy00ZGZmLTlhYzAtYjc3YmUyZWUwZDk4OjM2OWZjOTAzLTc4MGUtNDA2ZC04MTMzLTBlYmIxNGQ5YjQ5NA==",
+        "keywords": ["docs"],
+        "description": "📝 **Google Docs**: criar, editar e gerenciar documentos de texto"
+    },
+    "slack_external": {
+        "name": "Zapier Slack MCP",
+        "server_label": "zapier-slack",
+        "url": "https://mcp.zapier.com/api/mcp/s/a4c531ae-e564-4f2e-acda-4d76f9f345b9/mcp",
+        "token": "YTRjNTMxYWUtZTU2NC00ZjJlLWFjZGEtNGQ3NmY5ZjM0NWI5OjE5YjAzNjY0LTg4ZjYtNDMyYy1hZDhmLWQ3ZmQ5YzAyMmYyNw==",
+        "keywords": ["slack"],
+        "description": "💬 **Slack**: enviar mensagens para outros workspaces"
+    },
+    "google_calendar": {
+        "name": "Zapier Google Calendar MCP",
+        "server_label": "zapier-gcalendar",
+        "url": "https://mcp.zapier.com/api/mcp/s/e364090d-c050-4ace-97af-1314ab430dfe/mcp",
+        "token": "ZTM2NDA5MGQtYzA1MC00YWNlLTk3YWYtMTMxNGFiNDMwZGZlOjhlZDliNGNlLTlhYzAtNDU0NC1hOWViLTA3ZDgyMjMyNDEzZg==",
+        "keywords": ["calendar"],
+        "description": "📅 **Google Calendar**: criar e gerenciar eventos, reuniões e compromissos"
+    },
+    "gmail": {
+        "name": "Zapier Gmail MCP",
+        "server_label": "zapier-gmail",
+        "url": "https://mcp.zapier.com/api/mcp/s/3b20917b-c9f1-4d12-9f2a-1c60c84ae6d1/mcp",
+        "token": "M2IyMDkxN2ItYzlmMS00ZDEyLTlmMmEtMWM2MGM4NGFlNmQxOmYzMmU4MjIxLWQ5NjUtNDJhMy05YjIzLTJkZTJhMDY2NWZkZA==",
+        "keywords": ["gmail"],
+        "description": "📧 **Gmail**: enviar, ler e gerenciar emails"
+    }
+    # 🚀 FUTURE MCPs: Add new Zapier integrations here following the same pattern
+    #
+    # EXAMPLE - Notion Integration:
+    # "notion": {
+    #     "name": "Zapier Notion MCP",
+    #     "server_label": "zapier-notion",
+    #     "url": "https://mcp.zapier.com/api/mcp/s/YOUR-NOTION-SERVER-ID/mcp",
+    #     "token": "YOUR-NOTION-TOKEN",
+    #     "keywords": ["notion"],
+    #     "description": "� **Notion**: criar páginas e gerenciar bases de dados"
+    # }
+}
 
-#     logger.info("Creating Asana MCP Server connection with token authentication...")
-
-#     asana_command = "npx"
-#     asana_args = ["-y", "@roychri/mcp-server-asana"]
-#     asana_token = "2/1203422181648476/1210469533636732:cb4cc6cfe7871e7d0363b5e2061765d3"
-
-#     logger.info(f"Starting Asana MCP Server with command: {asana_command} {' '.join(asana_args)}")
-
-#     asana_server = MCPServerStdio(
-#         name="Asana MCP Server",
-#         params={
-#             "command": asana_command,
-#             "args": asana_args,
-#             "env": {
-#                 **os.environ,
-#                 "ASANA_ACCESS_TOKEN": asana_token
-#             },
-#         },
-#     )
-#     logger.info("Asana MCP Server instance created with token authentication.")
-#     return asana_server
-
-async def create_asana_mcp_server():
-    """TEMPORARILY DISABLED FOR TESTING - Returns None instead of Asana MCP Server."""
-    logger.info("Asana MCP Server temporarily disabled for testing")
-    return None
 
 
 async def create_slack_mcp_server() -> MCPServerStdio:
@@ -86,7 +127,7 @@ async def create_slack_mcp_server() -> MCPServerStdio:
     return slack_server
 
 
-async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdio = None) -> Agent:
+async def create_agent(slack_server: MCPServerStdio) -> Agent:
     """Creates and returns Livia, an OpenAI Agent configured to use the Slack MCP server and tools."""
 
     logger.info("Creating Livia - the Slack Chatbot Agent...")
@@ -96,57 +137,26 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
     mcp_servers = [slack_server]
     server_descriptions = [f"'{slack_server.name}'"]
 
-    if asana_server:
-        mcp_servers.append(asana_server)
-        server_descriptions.append(f"'{asana_server.name}'")
-
-
-
-    zapier_tools_description = ""
-
-    # TEMPORARILY COMMENTED FOR TESTING
-    # if asana_server:
-    #     asana_tools_description = (
-    #         "📋 **Asana Tools** (via MCP Server):\n"
-    #         "  - List workspaces and projects\n"
-    #         "  - Search tasks with proper filters (always include text, completed status, or project filters)\n"
-    #         "  - Get specific tasks by ID\n"
-    #         "  - Create and manage tasks\n"
-    #         "  - Update task status and assignments\n"
-    #         "  - Get project sections and task counts\n"
-    #         "  - Manage team collaboration\n\n"
-    #         "**Important Asana Search Guidelines:**\n"
-    #         "  - ALWAYS use workspace ID '1200537647127763' (never use workspace name)\n"
-    #         "  - ALWAYS use asana_search_projects first to find relevant projects and get their GIDs\n"
-    #         "  - When searching tasks, ALWAYS include completed=false AND text='' (empty string is valid)\n"
-    #         "  - Use specific project GIDs (not names) when searching tasks\n"
-    #         "  - For project-specific tasks, use 'projects' filter with project GID + completed + text filters\n"
-    #         "  - For user tasks, search within specific projects rather than workspace-wide\n"
-    #         "  - CRITICAL: API requires completed + text filters even when using projects filter\n"
-    #         "  - Known workspace: 'ℓiⱴε - The Culture-Driven Agency' (ID: 1200537647127763)\n"
-    #         "  - User lucas.vieira@live.tt has ID: 1203422181694687\n"
-    #         "  - WORKFLOW: 1) Find project GID → 2) Search tasks using project GID + filters\n"
-    #         "  - IMPORTANT: Project names have prefixes like '1. ELECTROLUX (BR)', use regex patterns like '.*ELECTROLUX.*BR.*'\n"
-    #         "  - CORRECT EXAMPLE: asana_search_tasks(workspace='1200537647127763', projects=['1204965509777978'], completed=false, text='', limit=5)\n"
-    #         "  - ALTERNATIVE: Use asana_get_project(project_id='1204965509777978') to get project details first\n"
-    #         "  - NEVER use projects_any - always use projects=['project_id'] as array\n"
-    #     )
+    # Generate dynamic Zapier tools description from configuration
+    zapier_descriptions = []
+    for mcp_key, mcp_config in ZAPIER_MCPS.items():
+        zapier_descriptions.append(f"  - ✅ {mcp_config['description']}")
 
     zapier_tools_description = (
-        "⚡ **Zapier Integration Tools** (ATIVO via Remote MCP):\n"
-        "  - ✅ **Asana**: gerenciar projetos, tarefas e workspaces\n"
-        "  - ✅ **Google Drive**: buscar, listar, criar e gerenciar arquivos e pastas\n"
-        "**Comandos Asana:**\n"
-        "  - 'buscar tarefas do projeto', 'listar projetos do workspace'\n"
-        "  - 'criar tarefa', 'atualizar status da tarefa'\n"
-        "**Comandos Google Drive:**\n"
-        "  - 'buscar arquivo no drive', 'procurar pasta no google drive'\n"
-        "  - 'encontrar documento', 'listar arquivos do drive'\n"
+        "⚡ **Zapier Integration Tools** (Remote MCP):\n"
+        + "\n".join(zapier_descriptions) + "\n"
+        "**Como usar (keywords simplificadas):**\n"
+        "  - Para Asana: use 'asana'\n"
+        "  - Para Google Drive: use 'google' ou 'drive'\n"
+        "  - Para Everhour: use 'everhour', 'tempo', 'time', 'horas'\n"
+        "  - Para Google Docs: use 'docs'\n"
+        "  - Para Gmail: use 'gmail'\n"
+        "  - Para Google Calendar: use 'calendar'\n"
+        "  - Para Slack Externo: use 'slack'\n"
         "**Dicas:**\n"
-        "  - Para Asana: use 'asana', 'projeto', 'tarefa', 'workspace'\n"
-        "  - Para Google Drive: use 'drive', 'arquivo', 'pasta', 'documento'\n"
         "  - IMPORTANTE: TargetGroupIndex_BR2024 é um ARQUIVO, não pasta\n"
         "  - Se não encontrar, tente busca parcial ou termos relacionados\n"
+        "  - Roteamento automático baseado em palavras-chave\n"
     )
 
     agent = Agent(
@@ -163,6 +173,17 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "  - Get channel history and user information\n"
             "  - Add reactions to messages\n"
             "  - ⚠️ **CRITICAL**: NEVER use slack_post_message tool - responses are handled automatically\n\n"
+            "**CRITICAL MCP USAGE INSTRUCTIONS:**\n"
+            "1. **Sequential Search Strategy**: When MCPs require multiple fields (workspace → project → task), perform searches step-by-step:\n"
+            "   - First: Search for workspace/organization\n"
+            "   - Second: Use workspace result to search for project\n"
+            "   - Third: Use project result to search for specific task\n"
+            "   - Example: Find workspace 'INOVAÇÃO' → Find project 'Inovação' → Find task 'Terminar Livia 2.0'\n"
+            "2. **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses in your answers:\n"
+            "   - Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'\n"
+            "   - This enables future operations using these exact IDs\n"
+            "3. **Use Exact IDs When Available**: If conversation history contains IDs, use them directly instead of searching by name\n"
+            "4. **Multiple Tool Calls**: Don't hesitate to make multiple MCP calls to complete a task properly\n\n"
             "**Guidelines:**\n"
             "- Use web search when you need current information, recent news, or facts you don't know\n"
             "- When users upload images or send image URLs, analyze them and provide detailed descriptions\n"
@@ -174,20 +195,10 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
             "- Consider that file names may have suffixes like _BR2024, _2024, etc.\n"
             "- Always offer to try broader or more specific search terms when initial search fails\n"
             "- When user says 'pasta' but means 'arquivo', correct and search for files instead\n"
-            "- CRITICAL: For Asana tasks/projects, use Zapier Asana Remote MCP\n"
-            "- CRITICAL: For Google Drive files/folders, use Zapier Google Drive Remote MCP\n"
-            "- If user mentions 'asana', 'tarefa', 'projeto', use Zapier Asana tools\n"
-            "- If user mentions 'drive', 'arquivo', 'pasta', use Zapier Google Drive tools\n"
-            "- Both Asana and Google Drive now use Zapier Remote MCP (different servers)\n"
+            "- 🔄 **Smart Routing**: Requests are automatically routed to appropriate Zapier MCPs\n"
+            "- 🎯 **Keyword Detection**: System detects intent and uses the right integration\n"
             "- 🚨 SECURITY: NEVER use slack_post_message - responses are handled automatically\n"
             "- 🚨 SECURITY: NEVER send messages to channels other than where you were mentioned\n"
-            f"{'- For Asana: ALWAYS use workspace ID 1200537647127763, NEVER use workspace name' if asana_server else ''}\n"
-            f"{'- For Asana workflow: 1) Search projects to get GID → 2) Search tasks using project GID + MANDATORY filters' if asana_server else ''}\n"
-            f"{'- When searching tasks: ALWAYS include completed=false AND text=\"\" (empty text is valid filter)' if asana_server else ''}\n"
-            f"{'- MANDATORY: asana_search_tasks requires completed + text filters, even if text is empty string' if asana_server else ''}\n"
-            f"{'- When users ask for \"my tasks\", use assignee filter with user ID 1203422181694687' if asana_server else ''}\n"
-            f"{'- NEVER use projects_any or assignee_any - use projects=[\"project_id\"] as array instead' if asana_server else ''}\n"
-            f"{'- CRITICAL: projects parameter must be array like [\"1204965509777978\"], not string' if asana_server else ''}\n"
             "- Be helpful, concise, and professional in your responses\n"
             "- Ask for clarification if needed\n"
             "- Always cite sources when providing information from web searches\n"
@@ -202,12 +213,27 @@ async def create_agent(slack_server: MCPServerStdio, asana_server: MCPServerStdi
     return agent
 
 
-async def process_message_with_zapier(message: str, image_urls: Optional[List[str]] = None) -> str:
-    """Process message using OpenAI Responses API with Zapier Remote MCP."""
+async def process_message_with_zapier_mcp(mcp_key: str, message: str, image_urls: Optional[List[str]] = None) -> str:
+    """
+    Generic function to process message using OpenAI Responses API with any Zapier Remote MCP.
+
+    Args:
+        mcp_key: Key from ZAPIER_MCPS configuration (e.g., 'asana', 'google_drive')
+        message: User message to process
+        image_urls: Optional list of image URLs for vision processing
+
+    Returns:
+        Response text from the MCP
+    """
     from openai import OpenAI
 
+    if mcp_key not in ZAPIER_MCPS:
+        raise ValueError(f"Unknown MCP key: {mcp_key}. Available: {list(ZAPIER_MCPS.keys())}")
+
+    mcp_config = ZAPIER_MCPS[mcp_key]
     client = OpenAI()
 
+    # Prepare input data with optional images
     if image_urls:
         input_content = [{"type": "input_text", "text": message}]
         for image_url in image_urls:
@@ -220,89 +246,170 @@ async def process_message_with_zapier(message: str, image_urls: Optional[List[st
     else:
         input_data = message
 
-    ZAPIER_MCP_URL = "https://mcp.zapier.com/api/mcp/s/196901ca-f828-4a37-ba99-383e7a618534/mcp"
-    ZAPIER_MCP_TOKEN = "MTk2OTAxY2EtZjgyOC00YTM3LWJhOTktMzgzZTdhNjE4NTM0OjJkOWQ0MTFiLTk0YjktNDMyMi1hNTEwLTI4NjRiMmY1NWE0MQ=="
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=input_data,
-        tools=[
-            {
-                "type": "mcp",
-                "server_label": "zapier-gdrive",
-                "server_url": ZAPIER_MCP_URL,
-                "require_approval": "never",
-                "headers": {
-                    "Authorization": f"Bearer {ZAPIER_MCP_TOKEN}"
-                }
-            }
-        ]
-    )
+    logger.info(f"Processing message with {mcp_config['name']}")
+    logger.info(f"MCP URL: {mcp_config['url']}")
+    logger.info(f"MCP Server Label: {mcp_config['server_label']}")
+    logger.info(f"Input message: {message}")
 
-    return response.output_text or "No response generated."
+    try:
+        # Special handling for Everhour time tracking operations
+        if mcp_config["server_label"] == "zapier-everhour":
+            response = client.responses.create(
+                model="gpt-4.1-mini",
+                input=input_data,
+                instructions=(
+                    "You are an Everhour time tracking specialist with access to MCP tools. "
+                    "🚨 **CRITICAL**: You MUST use the actual MCP tools - NEVER simulate or fake responses!\n\n"
+                    "🔧 **AVAILABLE MCP TOOLS**:\n"
+                    "- everhour_find_project: Find project by name\n"
+                    "- everhour_find_task: Find task by name within a project\n"
+                    "- everhour_add_time: Add time to a task (MAIN TOOL)\n\n"
+                    "🎯 **MANDATORY STEPS FOR ADD TIME**:\n"
+                    "1. **Use everhour_add_time tool** with exact parameters\n"
+                    "2. **Parameters required**: project_id, task_id, time, date, comment\n"
+                    "3. **Wait for real MCP response** - report actual results\n"
+                    "4. **If tool fails, report the exact error message**\n\n"
+                    "🔑 **PARAMETER FORMAT FOR everhour_add_time**:\n"
+                    "- project_id: 'ev:273391483277215' (with 'ev:' prefix)\n"
+                    "- task_id: Use exact ID from user (e.g., 'ev:273392685626466')\n"
+                    "- time: '1h', '2h', '30m' (NEVER '1:00' format)\n"
+                    "- date: Use CURRENT DATE in format 'YYYY-MM-DD' (check timezone!)\n"
+                    "- comment: Extract from user message or use 'Time tracking'\n\n"
+                    "🌍 **CRITICAL: VPN/TIMEZONE REQUIREMENTS**:\n"
+                    "- ✅ WORKING: VPN disabled, using local Brazilian timezone\n"
+                    "- ❌ FAILS: VPN enabled (wrong timezone/geolocation)\n"
+                    "- Format date as 'YYYY-MM-DD' using current local date\n"
+                    "- If user reports failures, suggest disabling VPN\n\n"
+                    "🚨 **FORBIDDEN BEHAVIORS**:\n"
+                    "- ❌ NEVER return fake JSON responses\n"
+                    "- ❌ NEVER say 'time was registered' without calling the tool\n"
+                    "- ❌ NEVER simulate success\n\n"
+                    "✅ **CORRECT BEHAVIOR**:\n"
+                    "- ✅ Call everhour_add_time with exact parameters\n"
+                    "- ✅ Report the actual response from the tool\n"
+                    "- ✅ If error occurs, show the real error message\n\n"
+                    "🎯 **GOAL**: Make REAL calls to everhour_add_time tool!"
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "allowed_tools": ["everhour_find_project", "everhour_find_task", "everhour_add_time"],
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token']}"
+                        }
+                    }
+                ]
+            )
+        else:
+            # Regular MCP processing for other services (Asana, Google Drive, etc.)
+            response = client.responses.create(
+                model="gpt-4.1-mini",
+                input=input_data,
+                instructions=(
+                    f"You are an intelligent assistant with access to {mcp_config['name']} via MCP tools. "
+                    "Follow these guidelines for optimal performance:\n\n"
+                    "🔍 **SEARCH STRATEGY**:\n"
+                    "1. **Sequential Search**: For hierarchical data (workspace → project → task):\n"
+                    "   - Step 1: Search for workspace/organization by name\n"
+                    "   - Step 2: Use workspace result to search for project\n"
+                    "   - Step 3: Use project result to search for specific task\n"
+                    "   - Example: Find workspace 'INOVAÇÃO' → Find project 'Inovação' → Find task 'Terminar Livia 2.0'\n\n"
+                    "2. **Limit Results**: Return only 4 results at a time, ask user if they want more\n"
+                    "3. **Be Specific**: Try exact names first, then partial matches if needed\n\n"
+                    "📋 **RESPONSE REQUIREMENTS**:\n"
+                    "- **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses\n"
+                    "- Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'\n"
+                    "- This enables future operations using these exact IDs\n\n"
+                    "⚡ **EFFICIENCY TIPS**:\n"
+                    "- Use exact IDs when available from conversation history\n"
+                    "- Make multiple MCP calls as needed to complete tasks\n"
+                    "- If essential info is missing (size, color, etc.), ask follow-up questions first\n\n"
+                    "🎯 **GOAL**: Provide accurate, actionable results with all necessary IDs and details."
+                ),
+                tools=[
+                    {
+                        "type": "mcp",
+                        "server_label": mcp_config["server_label"],
+                        "server_url": mcp_config["url"],
+                        "require_approval": "never",
+                        "headers": {
+                            "Authorization": f"Bearer {mcp_config['token']}"
+                        }
+                    }
+                ]
+            )
 
-async def process_message_with_zapier_asana(message: str, image_urls: Optional[List[str]] = None) -> str:
-    """Process message using OpenAI Responses API with Zapier Asana Remote MCP."""
-    from openai import OpenAI
+        logger.info(f"MCP Response received: {response.output_text}")
 
-    client = OpenAI()
+        # Log the raw response for debugging
+        logger.info(f"Raw MCP Response: {response.output_text}")
 
-    if image_urls:
-        input_content = [{"type": "input_text", "text": message}]
-        for image_url in image_urls:
-            input_content.append({
-                "type": "input_image",
-                "image_url": image_url,
-                "detail": "low"
-            })
-        input_data = input_content
-    else:
-        input_data = message
+        return response.output_text or "No response generated."
 
-    ZAPIER_ASANA_MCP_URL = "https://mcp.zapier.com/api/mcp/s/1206739432030436/mcp"
-    ZAPIER_ASANA_MCP_TOKEN = "ODY3ZGMzYWYtMmFhMy00NWYwLWI4NzItNjFmMDgwNjBmYWEyOjZhOGQ3YzRmLWRhZTQtNGRmMS1iY2JlLWJkNjJhM2MwM2YxYw=="
+    except Exception as e:
+        logger.error(f"Error calling {mcp_config['name']}: {e}")
+        raise
 
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=input_data,
-        tools=[
-            {
-                "type": "mcp",
-                "server_label": "zapier-asana",
-                "server_url": ZAPIER_ASANA_MCP_URL,
-                "require_approval": "never",
-                "headers": {
-                    "Authorization": f"Bearer {ZAPIER_ASANA_MCP_TOKEN}"
-                }
-            }
-        ]
-    )
 
-    return response.output_text or "No response generated."
+def detect_zapier_mcp_needed(message: str) -> Optional[str]:
+    """
+    Detect which Zapier MCP is needed based on message keywords.
+    Uses priority-based detection to handle overlapping keywords.
+
+    Args:
+        message: User message to analyze
+
+    Returns:
+        MCP key if detected, None otherwise
+    """
+    message_lower = message.lower()
+
+    # Priority order: More specific services first to avoid conflicts
+    priority_order = ["everhour", "asana", "google_drive", "google_docs", "gmail", "google_calendar", "slack_external"]
+
+    for mcp_key in priority_order:
+        if mcp_key in ZAPIER_MCPS:
+            mcp_config = ZAPIER_MCPS[mcp_key]
+            if any(keyword in message_lower for keyword in mcp_config["keywords"]):
+                logger.info(f"Detected {mcp_config['name']} keywords in message: {[kw for kw in mcp_config['keywords'] if kw in message_lower]}")
+                return mcp_key
+
+    return None
+
+
+def get_available_zapier_mcps() -> dict:
+    """
+    Get information about all available Zapier MCPs.
+
+    Returns:
+        Dictionary with MCP information for debugging/monitoring
+    """
+    return {
+        mcp_key: {
+            "name": config["name"],
+            "description": config["description"],
+            "keywords": config["keywords"]
+        }
+        for mcp_key, config in ZAPIER_MCPS.items()
+    }
 
 async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None) -> str:
     """Runs the agent with the given message and optional image URLs, returns the final output."""
 
-    # Check for Asana keywords (use Zapier Asana MCP)
-    asana_keywords = ["asana", "projeto", "tarefa", "task", "project", "workspace", "pauta inovação"]
-    needs_asana = any(keyword in message.lower() for keyword in asana_keywords)
+    # 🔍 Check if message needs a specific Zapier MCP
+    mcp_needed = detect_zapier_mcp_needed(message)
 
-    # Check for Google Drive keywords (use Zapier Google Drive MCP)
-    gdrive_keywords = ["google drive", "drive", "arquivo", "pasta", "documento", "buscar arquivo", "procurar pasta", "listar documentos"]
-    needs_gdrive = any(keyword in message.lower() for keyword in gdrive_keywords)
-
-    if needs_asana:
-        logger.info("Message requires Asana tools, using Zapier Asana Remote MCP")
+    if mcp_needed:
+        mcp_name = ZAPIER_MCPS[mcp_needed]["name"]
+        logger.info(f"Message requires {mcp_name}, routing to Zapier Remote MCP")
         try:
-            return await process_message_with_zapier_asana(message, image_urls)
+            return await process_message_with_zapier_mcp(mcp_needed, message, image_urls)
         except Exception as e:
-            logger.warning(f"Zapier Asana MCP failed, falling back to regular agent: {e}")
-
-    if needs_gdrive:
-        logger.info("Message requires Google Drive tools, using Zapier Google Drive Remote MCP")
-        try:
-            return await process_message_with_zapier(message, image_urls)
-        except Exception as e:
-            logger.warning(f"Zapier Google Drive MCP failed, falling back to regular agent: {e}")
+            logger.warning(f"{mcp_name} failed, falling back to regular agent: {e}")
+            # Continue to regular agent processing below
 
     # Generate a trace ID for monitoring the agent's execution flow
     trace_id = gen_trace_id()

@@ -125,20 +125,40 @@ A Livia vem com integração ao Asana via MCP (Model Context Protocol).
 - ✅ Buscar tarefas e projetos
 - ✅ Gerenciar colaboração em equipe
 
-#### ⚡ Zapier Automation
-Integração com Zapier Remote MCP para automação de workflows.
+#### ⚡ Zapier Automation (Modular)
+Sistema modular de integração com Zapier Remote MCP para automação de workflows.
 
-**Funcionalidades**:
+**🔧 Integrações Ativas**:
+- ✅ **Asana**: Gerenciar projetos, tarefas e workspaces
 - ✅ **Google Drive**: Buscar, listar, criar e gerenciar arquivos e pastas
-- ✅ **Gmail**: Enviar emails e gerenciar mensagens
-- ✅ **Notion**: Criar páginas e gerenciar conteúdo
-- ✅ **Trello**: Adicionar cards e gerenciar boards
+- ✅ **Everhour**: Controle de tempo, timesheet e rastreamento de horas
+- ✅ **Google Docs**: Criar, editar e gerenciar documentos de texto
+- ✅ **Slack Externo**: Enviar mensagens para outros workspaces
+- ✅ **Google Calendar**: Criar e gerenciar eventos, reuniões e compromissos
+- ✅ **Gmail**: Enviar, ler e gerenciar emails
+- ✅ **Google Analytics**: Acessar métricas, relatórios e dados de tráfego
+- ✅ **Google Slides**: Criar e gerenciar apresentações e slides
 
-**Exemplos de Comandos**:
-- "Buscar arquivo TargetGroupIndex_BR2024 no Google Drive"
-- "Procurar pasta Marketing no drive"
-- "Enviar email para equipe@empresa.com"
-- "Criar página no Notion sobre reunião"
+**🚀 Fácil Expansão**:
+- Sistema modular permite adicionar novas integrações facilmente
+- Roteamento automático baseado em palavras-chave
+- Configuração centralizada em `ZAPIER_MCPS`
+
+**📝 Exemplos de Comandos**:
+- **Asana**: "Busque as últimas 3 tarefas do projeto Pauta Inovação"
+- **Google Drive**: "Buscar arquivo TargetGroupIndex_BR2024 no Google Drive"
+- **Everhour**: "Registrar 2 horas de trabalho no projeto X"
+- **Google Docs**: "Criar documento sobre reunião de planejamento"
+- **Gmail**: "Enviar email para equipe@empresa.com sobre o projeto"
+- **Google Calendar**: "Agendar reunião para amanhã às 14h"
+- **Google Analytics**: "Mostrar métricas de tráfego do último mês"
+- **Google Slides**: "Criar apresentação sobre resultados Q4"
+
+**➕ Como Adicionar Novas Integrações**:
+1. Configure o MCP no Zapier (mcp.zapier.com)
+2. Adicione a configuração em `ZAPIER_MCPS` no `agent.py`
+3. Defina palavras-chave para roteamento automático
+4. Pronto! O sistema detecta e roteia automaticamente
 
 ## Uso
 
@@ -179,10 +199,14 @@ python server.py
    - "Liste meus projetos no Asana"
    - "Qual o status das tarefas do projeto X?"
 
-   **⚡ Zapier/Google Drive:**
-   - "Buscar arquivo TargetGroupIndex_BR2024 no Google Drive"
-   - "Procurar pasta Marketing no drive"
-   - "Listar documentos recentes no Google Drive"
+   **⚡ Zapier Integrations:**
+   - **Google Drive**: "Buscar arquivo TargetGroupIndex_BR2024 no Google Drive"
+   - **Gmail**: "Enviar email para cliente@empresa.com sobre proposta"
+   - **Google Calendar**: "Agendar reunião com equipe para sexta-feira às 15h"
+   - **Google Docs**: "Criar documento de especificações do projeto"
+   - **Everhour**: "Registrar 3 horas de desenvolvimento no projeto Alpha"
+   - **Google Analytics**: "Mostrar dados de tráfego da última semana"
+   - **Google Slides**: "Criar apresentação sobre resultados do trimestre"
 
 ### 6. Análise de Imagens com IA
 
@@ -233,13 +257,109 @@ liviaNEW3/
 ```
 
 ### 🔧 Componentes Principais
-- **agent.py**: Define a Livia, MCPs (Slack, Asana) e processamento Zapier
+- **agent.py**: Define a Livia com sistema modular de MCPs do Zapier
 - **server.py**: Servidor Socket Mode do Slack com proteção anti-loop
 - **tools/**: Módulo de ferramentas (WebSearch, ImageProcessor)
 - **OpenAI Agents SDK**: Orquestração de agentes inteligentes
-- **MCP Servers**: Comunicação com APIs externas (Slack, Asana)
-- **Zapier Remote MCP**: Automação via API Responses
+- **MCP Local**: Comunicação com APIs locais (Slack)
+- **Zapier Remote MCPs**: Sistema modular de automação via API Responses
 - **API Responses**: Nova API da OpenAI para agentes e automação
+
+### 🏗️ Arquitetura Modular dos MCPs
+
+```python
+# Configuração centralizada em agent.py
+ZAPIER_MCPS = {
+    "asana": {
+        "name": "Zapier Asana MCP",
+        "url": "https://mcp.zapier.com/api/mcp/s/...",
+        "keywords": ["asana", "projeto", "tarefa"],
+        "description": "📋 **Asana**: gerenciar projetos e tarefas"
+    },
+    "google_drive": {
+        "name": "Zapier Google Drive MCP",
+        "url": "https://mcp.zapier.com/api/mcp/s/...",
+        "keywords": ["drive", "arquivo", "pasta"],
+        "description": "📁 **Google Drive**: gerenciar arquivos"
+    }
+    # 🚀 Adicione novos MCPs aqui facilmente!
+}
+```
+
+**🔄 Fluxo de Roteamento**:
+1. **Detecção**: Sistema analisa palavras-chave na mensagem
+2. **Roteamento**: Direciona para o MCP apropriado automaticamente
+3. **Processamento**: OpenAI Responses API processa via MCP específico
+4. **Fallback**: Se falhar, usa agente local com Slack MCP
+
+## 🚀 Adicionando Novos MCPs do Zapier
+
+### Passo a Passo Completo
+
+#### 1. **Configure o MCP no Zapier**
+1. Acesse [mcp.zapier.com](https://mcp.zapier.com)
+2. Crie um novo servidor MCP
+3. Adicione as ferramentas/apps desejadas (Gmail, Calendar, etc.)
+4. Copie a URL do servidor e o token Bearer
+
+#### 2. **Adicione a Configuração no Código**
+Edite o arquivo `agent.py` e adicione sua nova integração em `ZAPIER_MCPS`:
+
+```python
+ZAPIER_MCPS = {
+    # ... integrações existentes ...
+
+    "gmail": {
+        "name": "Zapier Gmail MCP",
+        "server_label": "zapier-gmail",
+        "url": "https://mcp.zapier.com/api/mcp/s/SEU-SERVER-ID/mcp",
+        "token": "SEU-TOKEN-BEARER",
+        "keywords": ["gmail", "email", "enviar email", "caixa de entrada"],
+        "description": "📧 **Gmail**: enviar, ler e gerenciar emails"
+    }
+}
+```
+
+#### 3. **Teste a Integração**
+```bash
+# Reinicie o servidor
+python server.py
+
+# Teste no Slack
+@Livia enviar email para teste@exemplo.com
+```
+
+#### 4. **Exemplos de Integrações Populares**
+
+**📧 Gmail**:
+```python
+"gmail": {
+    "keywords": ["gmail", "email", "enviar email", "ler email"],
+    "description": "📧 **Gmail**: enviar, ler e gerenciar emails"
+}
+```
+
+**📅 Google Calendar**:
+```python
+"calendar": {
+    "keywords": ["calendario", "agenda", "reuniao", "evento"],
+    "description": "📅 **Calendar**: criar e gerenciar eventos"
+}
+```
+
+**💬 Slack Externo**:
+```python
+"slack_external": {
+    "keywords": ["slack externo", "enviar slack", "outro workspace"],
+    "description": "💬 **Slack**: enviar mensagens para outros workspaces"
+}
+```
+
+### ✅ Vantagens do Sistema Modular
+- **🔧 Plug & Play**: Adicione integrações sem modificar código existente
+- **🎯 Roteamento Automático**: Sistema detecta intenção baseado em palavras-chave
+- **🛡️ Isolamento**: Falhas em um MCP não afetam outros
+- **📈 Escalável**: Suporta quantas integrações precisar
 
 ## Desenvolvimento
 
