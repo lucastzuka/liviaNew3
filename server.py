@@ -197,8 +197,8 @@ class SlackSocketModeServer:
             # Check if the first message mentions the bot
             try:
                 auth_response = await self.app.client.auth_test()
-                bot_user_id = auth_response["user_id"]
-                return f"<@{bot_user_id}>" in text
+                current_bot_id = auth_response["user_id"]
+                return f"<@{current_bot_id}>" in text
             except Exception as e:
                 logger.error(f"Error getting bot user ID for thread check: {e}")
                 # Fallback: check for any mention pattern
@@ -297,7 +297,7 @@ class SlackSocketModeServer:
             event = body.get("event", {})
             logger.info(f"Received app mention event: {event}")
 
-            if event.get("user") == bot_user_id:
+            if event.get("user") == "U057233T98A":  # Bot user ID
                 logger.info("Ignoring app mention from bot itself")
                 return
 
@@ -316,8 +316,8 @@ class SlackSocketModeServer:
             # Remove the mention from the text
             try:
                 auth_response = await self.app.client.auth_test()
-                bot_user_id = auth_response["user_id"]
-                text = text.replace(f"<@{bot_user_id}>", "").strip()
+                current_bot_id = auth_response["user_id"]
+                text = text.replace(f"<@{current_bot_id}>", "").strip()
                 logger.info(f"Cleaned text after removing mention: '{text}'")
             except Exception as e:
                 logger.error(f"Error getting bot user ID: {e}")
