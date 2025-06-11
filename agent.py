@@ -101,33 +101,39 @@ ZAPIER_MCPS = {
 
 
 
-async def create_slack_mcp_server() -> MCPServerStdio:
+async def create_slack_mcp_server() -> Optional[MCPServerStdio]:
     """Creates and returns a Slack MCP Server instance using MCPServerStdio."""
 
     if "SLACK_BOT_TOKEN" not in os.environ:
-        raise ValueError("SLACK_BOT_TOKEN environment variable is not set for MCP Server")
+        logger.warning("SLACK_BOT_TOKEN environment variable is not set for MCP Server - Slack MCP will be disabled")
+        return None
     if "SLACK_TEAM_ID" not in os.environ:
-        raise ValueError("SLACK_TEAM_ID environment variable is not set for MCP Server")
+        logger.warning("SLACK_TEAM_ID environment variable is not set for MCP Server - Slack MCP will be disabled")
+        return None
 
-    slack_command = "npx -y @modelcontextprotocol/server-slack"
-    logger.info(f"Attempting to start Slack MCP Server with command: {slack_command}")
+    try:
+        slack_command = "npx -y @modelcontextprotocol/server-slack"
+        logger.info(f"Attempting to start Slack MCP Server with command: {slack_command}")
 
-    slack_server = MCPServerStdio(
-        name="Slack MCP Server",
-        params={
-            "command": slack_command.split(" ")[0],
-            "args": slack_command.split(" ")[1:],
-            "env": {
-                "SLACK_BOT_TOKEN": os.environ["SLACK_BOT_TOKEN"],
-                "SLACK_TEAM_ID": os.environ["SLACK_TEAM_ID"],
+        slack_server = MCPServerStdio(
+            name="Slack MCP Server",
+            params={
+                "command": slack_command.split(" ")[0],
+                "args": slack_command.split(" ")[1:],
+                "env": {
+                    "SLACK_BOT_TOKEN": os.environ["SLACK_BOT_TOKEN"],
+                    "SLACK_TEAM_ID": os.environ["SLACK_TEAM_ID"],
+                },
             },
-        },
-    )
-    logger.info("MCPServerStdio instance for Slack created.")
-    return slack_server
+        )
+        logger.info("MCPServerStdio instance for Slack created.")
+        return slack_server
+    except Exception as e:
+        logger.warning(f"Failed to create Slack MCP Server: {e} - Bot will continue without Slack MCP")
+        return None
 
 
-async def create_agent(slack_server: MCPServerStdio) -> Agent:
+async def create_agent(slack_server: Optional[MCPServerStdio]) -> Agent:
     """Creates and returns Livia, an OpenAI Agent configured to use the Slack MCP server and tools."""
 
     logger.info("Creating Livia - the Slack Chatbot Agent...")
@@ -141,8 +147,15 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
         include_search_results=True
     )
 
-    mcp_servers = [slack_server]
-    server_descriptions = [f"'{slack_server.name}'"]
+    mcp_servers = []
+    server_descriptions = []
+
+    if slack_server:
+        mcp_servers.append(slack_server)
+        server_descriptions.append(f"'{slack_server.name}'")
+        logger.info("Slack MCP Server included in agent configuration")
+    else:
+        logger.info("Slack MCP Server not available - agent will use only Web Search and File Search tools")
 
     # Generate dynamic Zapier tools description from configuration
     zapier_descriptions = []
@@ -166,6 +179,17 @@ async def create_agent(slack_server: MCPServerStdio) -> Agent:
         "  - Roteamento automático baseado em palavras-chave\n"
     )
 
+    # Build instructions dynamically based on available tools
+    slack_tools_section = ""
+    if slack_server:
+        slack_tools_section = (
+            "📱 **Slack Tools** (via MCP Server):\n"
+            "  - List channels and users\n"
+            "  - Get channel history and user information\n"
+            "  - Add reactions to messages\n"
+            "  - ⚠️ **CRITICAL**: NEVER use slack_post_message tool - responses are handled automatically\n\n"
+        )
+
     agent = Agent(
         name="Livia",
         instructions=(
@@ -180,11 +204,7 @@ Each message has the author's Slack user ID prepended, like the regex `^<@U.*?>:
             "📄 **File Search Tool**: Search through uploaded documents and files in your knowledge base for relevant information\n"
             "👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs\n"
             f"{zapier_tools_description}"
-            "📱 **Slack Tools** (via MCP Server):\n"
-            "  - List channels and users\n"
-            "  - Get channel history and user information\n"
-            "  - Add reactions to messages\n"
-            "  - ⚠️ **CRITICAL**: NEVER use slack_post_message tool - responses are handled automatically\n\n"
+            f"{slack_tools_section}"
             "**CRITICAL MCP USAGE INSTRUCTIONS:**\n"
             "1. **Sequential Search Strategy**: When MCPs require multiple fields (workspace → project → task), perform searches step-by-step:\n"
             "   - First: Search for workspace/organization\n"

@@ -674,11 +674,18 @@ async def initialize_agent():
     logger.info("Initializing Livia Slack MCP Server and Agent...")
 
     try:
-        # Create and start the Slack MCP server
+        # Create and start the Slack MCP server (optional)
         slack_mcp_server = await create_slack_mcp_server()
-        await slack_mcp_server.__aenter__()  # Start the MCP server context
 
-        # Create the agent with the MCP server (Zapier Asana is integrated via Remote MCP)
+        if slack_mcp_server:
+            try:
+                await slack_mcp_server.__aenter__()  # Start the MCP server context
+                logger.info("Slack MCP Server successfully initialized")
+            except Exception as mcp_error:
+                logger.warning(f"Failed to start Slack MCP Server: {mcp_error} - continuing without it")
+                slack_mcp_server = None
+
+        # Create the agent with or without the MCP server
         agent = await create_agent(slack_mcp_server)
 
         logger.info("Livia agent successfully initialized.")
@@ -702,6 +709,8 @@ async def cleanup_agent():
             logger.error(f"Error cleaning up Slack MCP server: {e}", exc_info=True)
         finally:
             slack_mcp_server = None
+    else:
+        logger.info("No Slack MCP server to clean up.")
 
     agent = None
     logger.info("Agent cleanup completed.")
