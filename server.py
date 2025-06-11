@@ -554,55 +554,16 @@ class SlackSocketModeServer:
             )
             message_ts = initial_response.get("ts")
 
-            # Track current image message for replacement
-            current_image_ts = None
-
-            # Streaming callback for partial images with message replacement
-            async def image_stream_callback(status_text: str, partial_image_path: Optional[str] = None, progress_percent: int = 0, stage_name: str = ""):
-                nonlocal current_image_ts
+            # Simple text streaming callback for progress updates
+            async def image_stream_callback(status_text: str, progress_percent: int = 0):
                 try:
-                    if partial_image_path:
-                        # Delete previous image message if exists
-                        if current_image_ts:
-                            try:
-                                await self.app.client.chat_delete(
-                                    channel=channel_id,
-                                    ts=current_image_ts
-                                )
-                                logger.info(f"Deleted previous image message: {current_image_ts}")
-                            except Exception as e:
-                                logger.warning(f"Could not delete previous image: {e}")
-
-                        # Update status message with current progress
-                        await self.app.client.chat_update(
-                            channel=channel_id,
-                            ts=message_ts,
-                            text=f"🎨 {stage_name}... {progress_percent}%"
-                        )
-
-                        # Upload new image with correct title
-                        title = f"🎨 {progress_percent}% - {stage_name}"
-                        image_response = await self._upload_image_to_slack_with_response(
-                            partial_image_path,
-                            channel_id,
-                            thread_ts,
-                            title=title,
-                            comment=f"🎨 **{progress_percent}%** - {status_text}"
-                        )
-
-                        if image_response and image_response.get("ok"):
-                            current_image_ts = image_response.get("ts")
-                            logger.info(f"Uploaded {stage_name.lower()} image ({progress_percent}%): {image_response['file']['id']}")
-
-                        # Clean up partial image
-                        image_generator.cleanup_temp_file(partial_image_path)
-                    else:
-                        # Update status message only
-                        await self.app.client.chat_update(
-                            channel=channel_id,
-                            ts=message_ts,
-                            text=f"🎨 {status_text}"
-                        )
+                    # Update status message with current progress
+                    await self.app.client.chat_update(
+                        channel=channel_id,
+                        ts=message_ts,
+                        text=f"🎨 {status_text} {progress_percent}%"
+                    )
+                    logger.info(f"Progress update: {status_text} {progress_percent}%")
                 except Exception as e:
                     logger.warning(f"Error in image stream callback: {e}")
 
@@ -617,41 +578,24 @@ class SlackSocketModeServer:
 
             if result["success"]:
                 if "image_path" in result:
-                    # Delete previous image message if exists
-                    if current_image_ts:
-                        try:
-                            await self.app.client.chat_delete(
-                                channel=channel_id,
-                                ts=current_image_ts
-                            )
-                            logger.info(f"Deleted previous image for final upload: {current_image_ts}")
-                        except Exception as e:
-                            logger.warning(f"Could not delete previous image for final: {e}")
-
-                    # Update status message to 100%
-                    await self.app.client.chat_update(
-                        channel=channel_id,
-                        ts=message_ts,
-                        text="🎨 Imagem Final... 100%"
-                    )
-
-                    # Upload final image with 100% progress
+                    # Upload final image
                     final_image_response = await self._upload_image_to_slack_with_response(
                         result["image_path"],
                         channel_id,
                         thread_ts,
-                        title="🎨 100% - Imagem Final ✅",
-                        comment=f"🎨 **Imagem final gerada com sucesso!**\n\n📝 **Prompt:** {result['original_prompt']}\n\n🤖 **Modelo:** {result['model']}"
+                        title="🎨 Imagem Gerada ✅",
+                        comment=f"🎨 **Imagem gerada com sucesso!**\n\n📝 **Prompt:** {result['original_prompt']}\n\n🤖 **Modelo:** {result['model']}"
                     )
 
                     if final_image_response and final_image_response.get("ok"):
-                        # Final status update
+                        # Final status update with image ID
+                        file_id = final_image_response['file']['id']
                         await self.app.client.chat_update(
                             channel=channel_id,
                             ts=message_ts,
-                            text="🎨 Imagem gerada com sucesso! ✅"
+                            text=f"🎨 Imagem gerada com sucesso! ✅\n\n🖼️ ID da imagem: {file_id}"
                         )
-                        logger.info("Final image uploaded successfully")
+                        logger.info(f"Final image uploaded successfully: {file_id}")
                     else:
                         await self.app.client.chat_update(
                             channel=channel_id,
@@ -662,11 +606,11 @@ class SlackSocketModeServer:
                     # Clean up temporary file
                     image_generator.cleanup_temp_file(result["image_path"])
                 else:
-                    # Case where only partial images were generated
+                    # Case where no image was generated
                     await self.app.client.chat_update(
                         channel=channel_id,
                         ts=message_ts,
-                        text="🎨 Imagem gerada com sucesso! ✅"
+                        text="❌ Erro: Nenhuma imagem foi gerada"
                     )
 
             else:

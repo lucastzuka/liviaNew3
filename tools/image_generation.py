@@ -72,101 +72,67 @@ class ImageGenerationTool:
             # Note: format and compression are not supported in the tool config
             # They are handled by the model automatically
             
-            # Add partial images for streaming if callback provided
-            if stream_callback:
-                tool_config["partial_images"] = 2  # Show exactly 2 partial images during generation
+            # Remove partial images - we'll only use text streaming
+            # if stream_callback:
+            #     tool_config["partial_images"] = 2
             
             logger.info(f"Generating image with prompt: '{prompt[:100]}...'")
             logger.info(f"Settings: size={size}, quality={quality}, format={format}")
             
             # Generate image using Responses API
             if stream_callback:
-                # Streaming generation
-                stream = client.responses.create(
-                    model=self.model,
-                    input=prompt,
-                    tools=[tool_config],
-                    stream=True
-                )
-                
-                partial_count = 0
-                final_image_data = None
-                revised_prompt = None
-                usage_info = None
+                # Start with progress updates
+                import asyncio
 
-                for event in stream:
-                    if event.type == "response.image_generation_call.partial_image":
-                        partial_count += 1
-                        idx = event.partial_image_index
-                        image_base64 = event.partial_image_b64
+                await stream_callback("Iniciando geração da imagem...", 10)
 
-                        # Map to correct percentages: partial1=10%, partial2=60%
-                        if idx == 0:  # partial_image_1
-                            progress_percent = 10
-                            stage_name = "Iniciando"
-                        elif idx == 1:  # partial_image_2
-                            progress_percent = 60
-                            stage_name = "Refinando"
-                        else:  # Additional partials (rare)
-                            progress_percent = min(80, 60 + (idx - 1) * 10)
-                            stage_name = "Finalizando"
+                # Start the actual generation in background
+                try:
+                    await stream_callback("Processando com gpt-image-1...", 30)
 
-                        logger.info(f"Received partial image {idx + 1} ({progress_percent}% - {stage_name})")
+                    # Generate the actual image (non-streaming)
+                    response = client.responses.create(
+                        model=self.model,
+                        input=prompt,
+                        tools=[tool_config]
+                    )
 
-                        # Save partial image temporarily and call callback
-                        if stream_callback:
-                            partial_path = await self._save_temp_image(
-                                image_base64, f"partial_{idx}", format
-                            )
-                            await stream_callback(
-                                f"{stage_name} detalhes da imagem...",
-                                partial_path,
-                                progress_percent,
-                                stage_name
-                            )
-                    
-                    elif event.type == "response.image_generation_call.completed":
-                        # Get final image data - try different possible attribute names
-                        final_image_data = None
-                        for attr in ['result', 'image_b64', 'image_data', 'b64_image', 'image']:
-                            if hasattr(event, attr):
-                                final_image_data = getattr(event, attr)
-                                if final_image_data:
-                                    break
+                    await stream_callback("Finalizando imagem...", 80)
 
-                        revised_prompt = getattr(event, 'revised_prompt', prompt)
-                        logger.info(f"Image generation completed. Final data available: {final_image_data is not None}")
+                    # Extract image data from response
+                    image_data = [
+                        output.result
+                        for output in response.output
+                        if output.type == "image_generation_call"
+                    ]
 
-                        # If we have final image data, call callback with 100%
-                        if final_image_data and stream_callback:
-                            final_path = await self._save_temp_image(
-                                final_image_data, "final", format
-                            )
-                            await stream_callback(
-                                "Imagem Final concluída!",
-                                final_path,
-                                100,
-                                "Imagem Final"
-                            )
+                    if not image_data:
+                        raise ValueError("No image data found in response")
 
-                    elif event.type == "response.completed":
-                        # Capture usage information
-                        if hasattr(event, 'usage'):
-                            usage_info = event.usage
-                            self._log_usage_info(usage_info, prompt)
-                        else:
-                            logger.info("No usage information available in response.completed event")
-                
-                if not final_image_data:
-                    logger.warning("No final image data received, but partial images were generated successfully")
-                    # Use the last partial image as final image
-                    return {
-                        "success": True,
-                        "message": "Image generated successfully using partial images",
-                        "partial_images_count": partial_count
-                    }
+                    image_base64 = image_data[0]
 
-                image_base64 = final_image_data
+                    # Get revised prompt if available
+                    revised_prompt = None
+                    for output in response.output:
+                        if output.type == "image_generation_call" and hasattr(output, 'revised_prompt'):
+                            revised_prompt = output.revised_prompt
+                            break
+
+                    if not revised_prompt:
+                        revised_prompt = prompt
+
+                    # Capture usage information
+                    usage_info = getattr(response, 'usage', None)
+                    if usage_info:
+                        self._log_usage_info(usage_info, prompt)
+
+                    # Final callback with 100%
+                    await stream_callback("Imagem gerada com sucesso!", 100)
+
+                except Exception as e:
+                    logger.error(f"Error during image generation: {e}")
+                    await stream_callback("Erro na geração da imagem", 0)
+                    raise
                 
             else:
                 # Non-streaming generation
