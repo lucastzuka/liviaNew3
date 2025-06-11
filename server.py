@@ -28,7 +28,7 @@ from agent import (
     process_message_streaming,
     MCPServerStdio,
 )
-from tools import ImageProcessor
+from tools import ImageProcessor, image_generator
 from slack_formatter import format_message_for_slack
 
 # --- Logging Setup ---
@@ -230,6 +230,19 @@ class SlackSocketModeServer:
         async with agent_lock: # Ensure only one request processed at a time
             try:
                 logger.info(f"Processing message via Livia agent with STREAMING...")
+
+                # Check if this is an image generation request
+                image_generation_keywords = [
+                    "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
+                    "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
+                ]
+
+                is_image_generation = any(keyword in text.lower() for keyword in image_generation_keywords)
+
+                if is_image_generation:
+                    logger.info("Detected image generation request")
+                    await self._handle_image_generation(text, say, original_channel_id, thread_ts_for_reply)
+                    return
 
                 # Process image URLs if any
                 processed_image_urls = []
@@ -455,6 +468,251 @@ class SlackSocketModeServer:
         """Process Slack private image URL to make it accessible."""
         return await ImageProcessor.process_slack_image(image_url)
 
+    async def _upload_image_to_slack(self, image_path: str, channel_id: str, thread_ts: Optional[str] = None,
+                                   title: str = "Generated Image", comment: str = "",
+                                   update_message_ts: Optional[str] = None) -> bool:
+        """Upload an image file to Slack, optionally updating an existing message."""
+        try:
+            logger.info(f"Uploading image to Slack: {image_path}")
+
+            if update_message_ts:
+                # For progressive updates, upload without comment and update the original message
+                response = await self.app.client.files_upload_v2(
+                    channel=channel_id,
+                    file=image_path,
+                    title=title,
+                    thread_ts=thread_ts
+                )
+            else:
+                # Regular upload with comment
+                response = await self.app.client.files_upload_v2(
+                    channel=channel_id,
+                    file=image_path,
+                    title=title,
+                    initial_comment=comment,
+                    thread_ts=thread_ts
+                )
+
+            if response["ok"]:
+                logger.info(f"Image uploaded successfully to Slack: {response['file']['id']}")
+                return True
+            else:
+                logger.error(f"Failed to upload image to Slack: {response.get('error', 'Unknown error')}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error uploading image to Slack: {e}", exc_info=True)
+            return False
+
+    async def _upload_image_to_slack_with_response(self, image_path: str, channel_id: str, thread_ts: Optional[str] = None,
+                                                 title: str = "Generated Image", comment: str = ""):
+        """Upload an image file to Slack and return the full response."""
+        try:
+            logger.info(f"Uploading image to Slack with response: {image_path}")
+
+            # Upload file to Slack
+            response = await self.app.client.files_upload_v2(
+                channel=channel_id,
+                file=image_path,
+                title=title,
+                initial_comment=comment,
+                thread_ts=thread_ts
+            )
+
+            if response["ok"]:
+                logger.info(f"Image uploaded successfully to Slack: {response['file']['id']}")
+                return response
+            else:
+                logger.error(f"Failed to upload image to Slack: {response.get('error', 'Unknown error')}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error uploading image to Slack: {e}", exc_info=True)
+            return None
+
+    async def _handle_image_generation(self, text: str, say: slack_bolt.Say, channel_id: str,
+                                     thread_ts: Optional[str] = None):
+        """Handle image generation requests with streaming support."""
+        try:
+            logger.info(f"Processing image generation request: {text}")
+
+            # Extract the prompt from the text
+            prompt = self._extract_image_prompt(text)
+            if not prompt:
+                await say(
+                    text="❌ Não consegui entender o que você quer que eu desenhe. Tente algo como: 'Gere uma imagem de um gato fofo'",
+                    channel=channel_id,
+                    thread_ts=thread_ts
+                )
+                return
+
+            # Post initial message with progress
+            initial_response = await say(
+                text="🎨 **Iniciando geração de imagem... 0%**\n\n🤖 Processando seu prompt com gpt-image-1...",
+                channel=channel_id,
+                thread_ts=thread_ts
+            )
+            message_ts = initial_response.get("ts")
+
+            # Track current image message for replacement
+            current_image_ts = None
+
+            # Streaming callback for partial images with message replacement
+            async def image_stream_callback(status_text: str, partial_image_path: Optional[str] = None, progress_percent: int = 0, stage_name: str = ""):
+                nonlocal current_image_ts
+                try:
+                    if partial_image_path:
+                        # Delete previous image message if exists
+                        if current_image_ts:
+                            try:
+                                await self.app.client.chat_delete(
+                                    channel=channel_id,
+                                    ts=current_image_ts
+                                )
+                                logger.info(f"Deleted previous image message: {current_image_ts}")
+                            except Exception as e:
+                                logger.warning(f"Could not delete previous image: {e}")
+
+                        # Update status message with current progress
+                        await self.app.client.chat_update(
+                            channel=channel_id,
+                            ts=message_ts,
+                            text=f"🎨 {stage_name}... {progress_percent}%"
+                        )
+
+                        # Upload new image with correct title
+                        title = f"🎨 {progress_percent}% - {stage_name}"
+                        image_response = await self._upload_image_to_slack_with_response(
+                            partial_image_path,
+                            channel_id,
+                            thread_ts,
+                            title=title,
+                            comment=f"🎨 **{progress_percent}%** - {status_text}"
+                        )
+
+                        if image_response and image_response.get("ok"):
+                            current_image_ts = image_response.get("ts")
+                            logger.info(f"Uploaded {stage_name.lower()} image ({progress_percent}%): {image_response['file']['id']}")
+
+                        # Clean up partial image
+                        image_generator.cleanup_temp_file(partial_image_path)
+                    else:
+                        # Update status message only
+                        await self.app.client.chat_update(
+                            channel=channel_id,
+                            ts=message_ts,
+                            text=f"🎨 {status_text}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error in image stream callback: {e}")
+
+            # Generate image with streaming
+            result = await image_generator.generate_image(
+                prompt=prompt,
+                size="auto",
+                quality="auto",
+                format="png",
+                stream_callback=image_stream_callback
+            )
+
+            if result["success"]:
+                if "image_path" in result:
+                    # Delete previous image message if exists
+                    if current_image_ts:
+                        try:
+                            await self.app.client.chat_delete(
+                                channel=channel_id,
+                                ts=current_image_ts
+                            )
+                            logger.info(f"Deleted previous image for final upload: {current_image_ts}")
+                        except Exception as e:
+                            logger.warning(f"Could not delete previous image for final: {e}")
+
+                    # Update status message to 100%
+                    await self.app.client.chat_update(
+                        channel=channel_id,
+                        ts=message_ts,
+                        text="🎨 Imagem Final... 100%"
+                    )
+
+                    # Upload final image with 100% progress
+                    final_image_response = await self._upload_image_to_slack_with_response(
+                        result["image_path"],
+                        channel_id,
+                        thread_ts,
+                        title="🎨 100% - Imagem Final ✅",
+                        comment=f"🎨 **Imagem final gerada com sucesso!**\n\n📝 **Prompt:** {result['original_prompt']}\n\n🤖 **Modelo:** {result['model']}"
+                    )
+
+                    if final_image_response and final_image_response.get("ok"):
+                        # Final status update
+                        await self.app.client.chat_update(
+                            channel=channel_id,
+                            ts=message_ts,
+                            text="🎨 Imagem gerada com sucesso! ✅"
+                        )
+                        logger.info("Final image uploaded successfully")
+                    else:
+                        await self.app.client.chat_update(
+                            channel=channel_id,
+                            ts=message_ts,
+                            text="❌ Erro ao fazer upload da imagem final para o Slack"
+                        )
+
+                    # Clean up temporary file
+                    image_generator.cleanup_temp_file(result["image_path"])
+                else:
+                    # Case where only partial images were generated
+                    await self.app.client.chat_update(
+                        channel=channel_id,
+                        ts=message_ts,
+                        text="🎨 Imagem gerada com sucesso! ✅"
+                    )
+
+            else:
+                await self.app.client.chat_update(
+                    channel=channel_id,
+                    ts=message_ts,
+                    text=f"❌ Erro ao gerar imagem: {result.get('error', 'Erro desconhecido')}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error in image generation: {e}", exc_info=True)
+            await say(
+                text=f"❌ Erro ao gerar imagem: {str(e)}",
+                channel=channel_id,
+                thread_ts=thread_ts
+            )
+
+    def _extract_image_prompt(self, text: str) -> Optional[str]:
+        """Extract the image prompt from user text."""
+        import re
+
+        # Remove common prefixes
+        text = text.strip()
+
+        # Patterns to remove
+        patterns = [
+            r'^gere?\s+uma?\s+imagem\s+(de\s+|do\s+|da\s+)?',
+            r'^criar?\s+uma?\s+imagem\s+(de\s+|do\s+|da\s+)?',
+            r'^faça?\s+uma?\s+imagem\s+(de\s+|do\s+|da\s+)?',
+            r'^fazer?\s+uma?\s+imagem\s+(de\s+|do\s+|da\s+)?',
+            r'^desenhe?\s+(uma?\s+)?',
+            r'^desenhar?\s+(uma?\s+)?',
+            r'^generate\s+an?\s+image\s+(of\s+)?',
+            r'^create\s+an?\s+image\s+(of\s+)?',
+            r'^draw\s+(an?\s+)?'
+        ]
+
+        for pattern in patterns:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE).strip()
+
+        # If there's still text left, that's our prompt
+        if text:
+            return text
+
+        return None
+
     async def _is_thread_started_with_mention(self, channel_id: str, thread_ts: str) -> bool:
         """Check if a thread was started with a mention to Livia."""
         try:
@@ -659,6 +917,11 @@ class SlackSocketModeServer:
         async def handle_file_change_events(body: Dict[str, Any]):
             """Handle file change events - acknowledge to prevent warnings."""
             logger.info("File change event acknowledged")
+
+        @self.app.event("reaction_added")
+        async def handle_reaction_added_events(body: Dict[str, Any]):
+            """Handle reaction added events - acknowledge to prevent warnings."""
+            logger.debug("Reaction added event acknowledged")
 
     # --- Server Start Method ---
     async def start(self):

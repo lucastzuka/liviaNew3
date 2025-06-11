@@ -12,6 +12,7 @@ Livia é um chatbot inteligente para Slack que usa **OpenAI Agents SDK** e **API
   - 📄 **File Search Tool** - Busca em documentos e base de conhecimento com citações
   - 🎵 **Audio Transcription** - Transcrição de áudios enviados pelo Slack para texto
   - 👁️ **Image Vision** - Análise de imagens enviadas via Slack ou URLs
+  - 🎨 **Image Generation** - Geração de imagens de alta qualidade usando gpt-image-1
   - 📋 **Asana Integration** - Gerenciamento de projetos e tarefas via MCP
   - ⚡ **Zapier Automation** - Integração com Google Drive, Gmail e outras ferramentas
   - 🔧 **Slack MCP Tools** - Ferramentas nativas do Slack via Model Context Protocol
@@ -257,6 +258,18 @@ python server.py
    - **Upload de arquivo**: Envie arquivos .mp3, .wav, .m4a, .ogg, .flac, .webm
    - **Limite**: 25MB por arquivo
    - Livia transcreverá automaticamente e processará o texto
+
+6. **Gere imagens** com IA:
+   - **Comandos**: "gere uma imagem de...", "desenhe...", "criar imagem de..."
+   - **Modelo**: gpt-image-1 (mais avançado da OpenAI)
+   - **Qualidade**: Alta qualidade com streaming de imagens parciais
+   - **Formatos**: PNG, JPEG, WebP com diferentes tamanhos
+   - **Exemplos**:
+     ```
+     @Livia gere uma imagem de um gato fofo
+     @Livia desenhe uma paisagem futurista
+     @Livia criar imagem de um robô amigável
+     ```
 
 6. **Busque em documentos** da base de conhecimento:
    ```

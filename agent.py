@@ -14,7 +14,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 # OpenAI Agents SDK components
-from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers, FileSearchTool
+from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers, FileSearchTool, ImageGenerationTool
 from agents.mcp import MCPServerStdio
 
 # Load environment variables from .env file
@@ -147,6 +147,16 @@ async def create_agent(slack_server: Optional[MCPServerStdio]) -> Agent:
         include_search_results=True
     )
 
+    # Image Generation Tool configuration
+    from agents.tool import ImageGeneration
+    image_generation_tool = ImageGenerationTool(
+        tool_config=ImageGeneration(
+            size="auto",
+            quality="auto",
+            format="png"
+        )
+    )
+
     mcp_servers = []
     server_descriptions = []
 
@@ -203,6 +213,7 @@ Each message has the author's Slack user ID prepended, like the regex `^<@U.*?>:
             "🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers\n"
             "📄 **File Search Tool**: Search through uploaded documents and files in your knowledge base for relevant information\n"
             "👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs\n"
+            "🎨 **Image Generation Tool**: Generate high-quality images from text descriptions using gpt-image-1 model\n"
             f"{zapier_tools_description}"
             f"{slack_tools_section}"
             "**CRITICAL MCP USAGE INSTRUCTIONS:**\n"
@@ -239,7 +250,7 @@ Each message has the author's Slack user ID prepended, like the regex `^<@U.*?>:
             "- You can help with general questions, provide information, and assist with Slack-related tasks"""
         ),
         model="gpt-4.1",
-        tools=[web_search_tool, file_search_tool],
+        tools=[web_search_tool, file_search_tool, image_generation_tool],
         mcp_servers=mcp_servers,
     )
     servers_info = " and ".join(server_descriptions)
