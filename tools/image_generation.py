@@ -81,23 +81,37 @@ class ImageGenerationTool:
             
             # Generate image using Responses API
             if stream_callback:
-                # Start with progress updates
+                # Start with progress updates - more suave timing
                 import asyncio
 
-                await stream_callback("Iniciando geração da imagem...", 10)
+                # Initial progress
+                await stream_callback("Gerando imagem...", 0)
 
                 # Start the actual generation in background
-                try:
-                    await stream_callback("Processando com gpt-image-1...", 30)
-
-                    # Generate the actual image (non-streaming)
-                    response = client.responses.create(
+                async def generate_image():
+                    return client.responses.create(
                         model=self.model,
                         input=prompt,
                         tools=[tool_config]
                     )
 
-                    await stream_callback("Finalizando imagem...", 80)
+                # Create the generation task
+                generation_task = asyncio.create_task(generate_image())
+
+                # Progress updates every 10 seconds with more frequent updates
+                progress_steps = [10, 30, 50, 70, 90]
+                step_index = 0
+
+                try:
+                    while not generation_task.done() and step_index < len(progress_steps):
+                        await asyncio.sleep(10)  # Wait 10 seconds
+                        if not generation_task.done():
+                            await stream_callback("Gerando imagem...", progress_steps[step_index])
+                            step_index += 1
+                            logger.info(f"🎨 Image generation progress: {progress_steps[step_index-1]}%")
+
+                    # Wait for generation to complete
+                    response = await generation_task
 
                     # Extract image data from response
                     image_data = [
@@ -126,8 +140,8 @@ class ImageGenerationTool:
                     if usage_info:
                         self._log_usage_info(usage_info, prompt)
 
-                    # Final callback with 100%
-                    await stream_callback("Imagem gerada com sucesso!", 100)
+                    # Final callback - change to "Imagem gerada!"
+                    await stream_callback("Imagem gerada!", 100)
 
                 except Exception as e:
                     logger.error(f"Error during image generation: {e}")
@@ -239,31 +253,19 @@ class ImageGenerationTool:
             output_cost = (output_tokens / 1000) * output_image_token_cost
             total_cost = input_cost + output_cost
 
-            # Log detailed information with high visibility
-            print("\n" + "=" * 70)
-            print("🎨 IMAGE GENERATION USAGE & COST REPORT")
-            print("=" * 70)
-            print(f"📝 Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
-            print(f"🔤 Input Tokens: {input_tokens:,}")
-            print(f"🖼️  Output Image Tokens: {output_tokens:,}")
-            print(f"📊 Total Tokens: {total_tokens:,}")
-            print(f"💰 Input Cost: ${input_cost:.6f}")
-            print(f"💰 Output Cost: ${output_cost:.6f}")
+            # Log simplified cost information with high visibility
+            print("\n" + "=" * 50)
+            print("🎨 IMAGE GENERATION COST")
+            print("=" * 50)
             print(f"💰 TOTAL COST: ${total_cost:.6f}")
-            print("=" * 70 + "\n")
+            print("=" * 50 + "\n")
 
             # Also log to logger for file logging
-            logger.info("=" * 60)
-            logger.info("🎨 IMAGE GENERATION USAGE & COST REPORT")
-            logger.info("=" * 60)
-            logger.info(f"📝 Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
-            logger.info(f"🔤 Input Tokens: {input_tokens:,}")
-            logger.info(f"🖼️  Output Image Tokens: {output_tokens:,}")
-            logger.info(f"📊 Total Tokens: {total_tokens:,}")
-            logger.info(f"💰 Input Cost: ${input_cost:.6f}")
-            logger.info(f"💰 Output Cost: ${output_cost:.6f}")
-            logger.info(f"💰 TOTAL COST: ${total_cost:.6f}")
-            logger.info("=" * 60)
+            logger.info("=" * 40)
+            logger.info("🎨 IMAGE GENERATION COST")
+            logger.info("=" * 40)
+            logger.info(f" TOTAL COST: ${total_cost:.6f}")
+            logger.info("=" * 40)
 
         except Exception as e:
             logger.warning(f"Failed to log usage info: {e}")

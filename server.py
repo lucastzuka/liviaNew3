@@ -22,11 +22,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent import (
-    create_slack_mcp_server,
     create_agent,
     process_message,
-    process_message_streaming,
-    MCPServerStdio,
 )
 from tools import ImageProcessor, image_generator
 from slack_formatter import format_message_for_slack
@@ -38,11 +35,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global Variables
-slack_mcp_server: MCPServerStdio | None = None
-agent = None
-agent_lock = asyncio.Lock()
-processed_messages = set()
-bot_user_id = "U057233T98A"
+# TODO: SLACK_INTEGRATION_POINT - Variáveis globais para integração com Slack
+agent = None  # Agente OpenAI principal
+agent_lock = asyncio.Lock()  # Lock para concorrência (removido para permitir múltiplos usuários)
+processed_messages = set()  # Cache de mensagens processadas
+bot_user_id = "U057233T98A"  # ID do bot no Slack - IMPORTANTE para detectar menções
 
 # DEVELOPMENT SECURITY: Whitelist of allowed channels and users
 ALLOWED_CHANNELS = {"C059NNLU3E1"}  # Only this specific channel
@@ -287,7 +284,7 @@ class SlackSocketModeServer:
                             logger.warning(f"Failed to update streaming message: {update_error}")
 
                 # Delegate processing to the agent with streaming support
-                response = await process_message_streaming(agent, context_input, processed_image_urls, stream_callback)
+                response = await process_message(agent, context_input, processed_image_urls, stream_callback)
 
                 # Final update with complete response
                 try:
@@ -368,7 +365,7 @@ class SlackSocketModeServer:
                     logger.info(f"Processing {len(image_urls)} images...")
                     processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
 
-                # Delegate processing to the agent with image support
+                # Delegate processing to the agent with image support (using streaming)
                 response = await process_message(agent, context_input, processed_image_urls)
 
                 # Always respond in the original channel
@@ -578,29 +575,28 @@ class SlackSocketModeServer:
 
             if result["success"]:
                 if "image_path" in result:
-                    # Upload final image
+                    # Upload final image with simple title
+                    file_id = f"img_{int(__import__('time').time())}"  # Simple timestamp-based ID
                     final_image_response = await self._upload_image_to_slack_with_response(
                         result["image_path"],
                         channel_id,
                         thread_ts,
-                        title="🎨 Imagem Gerada ✅",
-                        comment=f"🎨 **Imagem gerada com sucesso!**\n\n📝 **Prompt:** {result['original_prompt']}\n\n🤖 **Modelo:** {result['model']}"
+                        title=file_id,
+                        comment=""  # No comment needed
                     )
 
                     if final_image_response and final_image_response.get("ok"):
-                        # Final status update with image ID
-                        file_id = final_image_response['file']['id']
-                        await self.app.client.chat_update(
+                        # Just remove the status message - image speaks for itself
+                        await self.app.client.chat_delete(
                             channel=channel_id,
-                            ts=message_ts,
-                            text=f"🎨 Imagem gerada com sucesso! ✅\n\n🖼️ ID da imagem: {file_id}"
+                            ts=message_ts
                         )
-                        logger.info(f"Final image uploaded successfully: {file_id}")
+                        logger.info(f"Final image uploaded successfully: {final_image_response['file']['id']}")
                     else:
                         await self.app.client.chat_update(
                             channel=channel_id,
                             ts=message_ts,
-                            text="❌ Erro ao fazer upload da imagem final para o Slack"
+                            text="❌ Erro ao fazer upload da imagem"
                         )
 
                     # Clean up temporary file
@@ -696,7 +692,16 @@ class SlackSocketModeServer:
 
         @self.app.event("message")
         async def handle_message_events(body: Dict[str, Any], say: slack_bolt.Say):
-            """Handle message events - only respond in threads that started with a mention."""
+            """
+            SLACK_INTEGRATION_POINT - Handler principal para mensagens do Slack
+
+            Lógica atual:
+            - Só responde em threads que começaram com menção ao bot
+            - Processa áudio automaticamente
+            - Aplica filtros de segurança (canais/usuários permitidos)
+
+            TODO: Aqui é onde o agente processa mensagens do Slack
+            """
             event = body.get("event", {})
 
 
@@ -775,7 +780,16 @@ class SlackSocketModeServer:
 
         @self.app.event("app_mention")
         async def handle_app_mentions(body: Dict[str, Any], say: slack_bolt.Say):
-            """Handle app mentions - start new threads or respond in existing ones."""
+            """
+            SLACK_INTEGRATION_POINT - Handler para menções diretas ao bot (@livia)
+
+            Lógica atual:
+            - Detecta quando o bot é mencionado
+            - Inicia nova thread ou responde em thread existente
+            - Remove a menção do texto antes de processar
+
+            TODO: Ponto principal onde o bot é "chamado" pelo usuário
+            """
             event = body.get("event", {})
 
 
@@ -875,26 +889,14 @@ class SlackSocketModeServer:
 
 # --- Agent Initialization and Cleanup Functions ---
 async def initialize_agent():
-    """Initializes the global agent and MCP server instances."""
-    global slack_mcp_server, agent
+    """Initializes the Livia agent (without MCP Slack local - using direct API)."""
+    global agent
 
-    logger.info("Initializing Livia Slack MCP Server and Agent...")
+    logger.info("Initializing Livia Agent (using direct Slack API)...")
 
     try:
-        # Create and start the Slack MCP server (optional)
-        slack_mcp_server = await create_slack_mcp_server()
-
-        if slack_mcp_server:
-            try:
-                await slack_mcp_server.__aenter__()  # Start the MCP server context
-                logger.info("Slack MCP Server successfully initialized")
-            except Exception as mcp_error:
-                logger.warning(f"Failed to start Slack MCP Server: {mcp_error} - continuing without it")
-                slack_mcp_server = None
-
-        # Create the agent with or without the MCP server
-        agent = await create_agent(slack_mcp_server)
-
+        # Create the agent (sem MCP Slack local)
+        agent = await create_agent()
         logger.info("Livia agent successfully initialized.")
 
     except Exception as e:
@@ -903,21 +905,13 @@ async def initialize_agent():
         raise
 
 async def cleanup_agent():
-    """Cleans up the MCP server resources."""
-    global slack_mcp_server, agent
+    """Cleans up the agent resources."""
+    global agent
 
     logger.info("Cleaning up Livia agent resources...")
 
-    if slack_mcp_server:
-        try:
-            await slack_mcp_server.__aexit__(None, None, None)
-            logger.info("Slack MCP server cleaned up.")
-        except Exception as e:
-            logger.error(f"Error cleaning up Slack MCP server: {e}", exc_info=True)
-        finally:
-            slack_mcp_server = None
-    else:
-        logger.info("No Slack MCP server to clean up.")
+    # TODO: SLACK_INTEGRATION_POINT - Se precisar de cleanup específico do Slack, adicionar aqui
+    # Exemplo: fechar conexões, limpar cache, etc.
 
     agent = None
     logger.info("Agent cleanup completed.")

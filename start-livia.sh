@@ -44,6 +44,23 @@ echo "   - ⚡ Streaming em Tempo Real"
 echo "   - 📋 9 MCPs Zapier (Asana, Google Drive, etc.)"
 echo ""
 
+# Ativa ambiente conda base (Python 3.12)
+echo "🔧 Ativando ambiente conda base (Python 3.12)..."
+source /opt/homebrew/Caskroom/miniconda/base/etc/profile.d/conda.sh
+conda activate base
+
+# Verifica versão do Python
+PYTHON_VERSION=$(python --version 2>&1)
+echo "🐍 Usando Python: $PYTHON_VERSION"
+
+# Verifica se temos Python 3.11+
+if python -c "import sys; exit(0 if sys.version_info >= (3, 11) else 1)"; then
+    echo "✅ Versão do Python compatível com MCPServerStdio"
+else
+    echo "❌ Erro: Python 3.11+ necessário para MCPServerStdio"
+    exit 1
+fi
+
 # Executa o servidor
 echo "🤖 Iniciando servidor..."
 python server.py
