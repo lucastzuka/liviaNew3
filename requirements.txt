@@ -17,3 +17,6 @@ python-dotenv>=1.0.0
 
 # Additional utilities
 pathlib2>=2.3.7
+
+# Concurrency and retry handling
+tenacity>=8.2.0

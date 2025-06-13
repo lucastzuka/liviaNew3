@@ -116,3 +116,12 @@ dmypy.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Project specific
+test_*.py
+*_test.py
+list_*.py
+temp_*.py
+
+# Node modules (for npx dependencies)
+node_modules/
