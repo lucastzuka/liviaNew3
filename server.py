@@ -179,21 +179,21 @@ class SlackSocketModeServer:
         image_urls: Optional[List[str]] = None, audio_files: Optional[List[dict]] = None,
         use_thread_history: bool = True, user_id: str = None
     ):
-        """Sends message to agent and posts streaming response to Slack.
-        Concurrency is limited by a global asyncio.Semaphore (agent_semaphore).
+        """
+        Sends message to agent and posts streaming response to Slack.
+        Implements:
+        - Visual spinner using alternating `𖧹`/`๏` via chat_update
+        - Header tag in format `⛭TagName` at the top of all responses
         """
         global agent, agent_semaphore
-        if not agent: # Check if agent is ready
+        if not agent:
             logger.error("Livia agent not ready.")
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
             return
 
-        # Store the original channel for validation
         original_channel_id = channel_id
-
-        # Check if channel is allowed
         if not await is_channel_allowed(channel_id, user_id or "unknown", self.app.client):
-            return  # Silently ignore unauthorized channels
+            return
 
         if text and any(phrase in text.lower() for phrase in [
             "encontrei o arquivo", "você pode acessá-lo", "estou à disposição",
@@ -208,19 +208,15 @@ class SlackSocketModeServer:
         if audio_files:
             logger.info(f"Processing {len(audio_files)} audio file(s)...")
             transcriptions = []
-
             for audio_file in audio_files:
                 logger.info(f"Transcribing audio file: {audio_file['name']}")
                 transcription = await self._transcribe_audio_file(audio_file)
-
                 if transcription:
                     transcriptions.append(f"🎵 **Áudio '{audio_file['name']}'**: {transcription}")
                     logger.info(f"Audio transcribed: {audio_file['name']} -> {len(transcription)} chars")
                 else:
                     transcriptions.append(f"❌ **Erro ao transcrever áudio '{audio_file['name']}'**")
                     logger.warning(f"Failed to transcribe audio: {audio_file['name']}")
-
-            # Combine transcriptions with text
             if transcriptions:
                 if text:
                     context_input = f"{text}\n\n" + "\n\n".join(transcriptions)
@@ -236,74 +232,115 @@ class SlackSocketModeServer:
             else:
                 logger.warning("Failed to fetch thread history.")
 
-        # Use a semaphore to limit concurrency (allows up to max_concurrency simultaneous requests)
+        # --- Visual spinner logic ---
         async with agent_semaphore:
+            spinner_symbols = ["𖧹", "๏"]
+            spinner_idx = 0
+            stop_event = asyncio.Event()
+            spinner_msg = await say(text="`𖧹`", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            message_ts = spinner_msg.get("ts")
+
+            async def spinner_task_func():
+                nonlocal spinner_idx
+                # Spinner loop: alternate symbol every second using chat_update
+                while not stop_event.is_set():
+                    spinner_idx = (spinner_idx + 1) % 2
+                    try:
+                        await self.app.client.chat_update(
+                            channel=original_channel_id,
+                            ts=message_ts,
+                            text=f"`{spinner_symbols[spinner_idx]}`"
+                        )
+                    except Exception as update_error:
+                        logger.warning(f"Spinner update failed: {update_error}")
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
+
+            spinner_task = asyncio.create_task(spinner_task_func())
+
+            # --- Determine response tag ---
+            def get_response_tag():
+                # ImageGen → when for _handle_image_generation
+                # AudioTranscribe → when audio_files present
+                # Vision → when image_urls present and not image generation
+                # ChatAgent → fallback
+                image_generation_keywords = [
+                    "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
+                    "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
+                ]
+                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    return "ImageGen"
+                if audio_files:
+                    return "AudioTranscribe"
+                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    return "Vision"
+                return "ChatAgent"
+
+            tag = get_response_tag()
+            header = f"`⛭{tag}`\n\n"
+
             try:
                 logger.info(
                     f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent with STREAMING..."
                 )
 
-            # Check if this is an image generation request
-            image_generation_keywords = [
-                "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
-                "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
-            ]
-
-            is_image_generation = any(keyword in text.lower() for keyword in image_generation_keywords)
-
-            if is_image_generation:
-                logger.info("Detected image generation request")
-                await self._handle_image_generation(text, say, original_channel_id, thread_ts_for_reply)
-                return
-
-            # Process image URLs if any
-            processed_image_urls = []
-            if image_urls:
-                logger.info(f"Processing {len(image_urls)} images...")
-                processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
-
-            # Post initial message to get message timestamp for updates
-            initial_response = await say(text="🤔 Pensando...", channel=original_channel_id, thread_ts=thread_ts_for_reply)
-            message_ts = initial_response.get("ts")
-
-            # Streaming callback to update Slack message
-            current_text = ""
-            last_update_length = 0
-            import time
-            last_update_time = time.time()
-
-            async def stream_callback(delta_text: str, full_text: str):
-                nonlocal current_text, last_update_length, last_update_time
-                current_text = full_text
-                current_time = time.time()
-
-                # Update message every 10 characters or every 0.5 seconds, or when complete
-                should_update = (
-                    len(current_text) - last_update_length >= 10 or  # Every 10 chars
-                    current_time - last_update_time >= 0.5 or        # Every 0.5 seconds
-                    not delta_text                                    # When complete
-                )
-
-                if should_update and current_text:
+                # If image generation, call handler (it does its own spinner/updating)
+                if tag == "ImageGen":
+                    stop_event.set()
                     try:
-                        # Update the message with current streaming text
-                        formatted_text = format_message_for_slack(current_text)
-                        await self.app.client.chat_update(
-                            channel=original_channel_id,
-                            ts=message_ts,
-                            text=formatted_text
-                        )
-                        last_update_length = len(current_text)
-                        last_update_time = current_time
-                    except Exception as update_error:
-                        logger.warning(f"Failed to update streaming message: {update_error}")
+                        await spinner_task
+                    except Exception:
+                        pass
+                    await self._handle_image_generation(text, say, original_channel_id, thread_ts_for_reply)
+                    return
 
-            # Delegate processing to the agent with streaming support
-            response = await process_message(agent, context_input, processed_image_urls, stream_callback)
+                # Process image URLs if any
+                processed_image_urls = []
+                if image_urls:
+                    logger.info(f"Processing {len(image_urls)} images...")
+                    processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
 
-            # Final update with complete response
+                # Streaming callback to update Slack message
+                current_text = ""
+                last_update_length = 0
+                import time
+                last_update_time = time.time()
+
+                async def stream_callback(delta_text: str, full_text: str):
+                    nonlocal current_text, last_update_length, last_update_time
+                    current_text = full_text
+                    current_time = time.time()
+                    should_update = (
+                        len(current_text) - last_update_length >= 10 or
+                        current_time - last_update_time >= 0.5 or
+                        not delta_text
+                    )
+                    if should_update and current_text:
+                        try:
+                            formatted_text = header + format_message_for_slack(current_text)
+                            await self.app.client.chat_update(
+                                channel=original_channel_id,
+                                ts=message_ts,
+                                text=formatted_text
+                            )
+                            last_update_length = len(current_text)
+                            last_update_time = current_time
+                        except Exception as update_error:
+                            logger.warning(f"Failed to update streaming message: {update_error}")
+
+                # Agent streaming
+                response = await process_message(agent, context_input, processed_image_urls, stream_callback)
+
+                # Final update with complete response
+                stop_event.set()
                 try:
-                    formatted_response = format_message_for_slack(str(response))
+                    await spinner_task
+                except Exception:
+                    pass
+                try:
+                    formatted_response = header + format_message_for_slack(str(response))
                     await self.app.client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
@@ -311,20 +348,22 @@ class SlackSocketModeServer:
                     )
                 except Exception as final_update_error:
                     logger.warning(f"Failed to update final message: {final_update_error}")
-                    # Fallback: post new message
-                    await say(text=str(response), channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                    await say(text=formatted_response, channel=original_channel_id, thread_ts=thread_ts_for_reply)
 
                 logger.info(
                     f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}"
                 )
-                formatted_response = format_message_for_slack(str(response))
                 logger.info(
                     f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE (STREAMING): {formatted_response}"
                 )
 
             except Exception as e:
+                stop_event.set()
+                try:
+                    await spinner_task
+                except Exception:
+                    pass
                 logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)
-                # Try to update the initial message with error
                 try:
                     if 'message_ts' in locals():
                         await self.app.client.chat_update(
@@ -342,21 +381,18 @@ class SlackSocketModeServer:
         self, text: str, say: slack_bolt.Say, channel_id: str, thread_ts_for_reply: Optional[str] = None,
         image_urls: Optional[List[str]] = None, use_thread_history: bool = True, user_id: str = None
     ):
-        """Sends message to agent and posts response to Slack.
-        Concurrency is limited by a global asyncio.Semaphore (agent_semaphore).
+        """
+        Synchronous (non-streaming) response with spinner + header tag.
         """
         global agent, agent_semaphore
-        if not agent: # Check if agent is ready
+        if not agent:
             logger.error("Livia agent not ready.")
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
             return
 
-        # Store the original channel for validation
         original_channel_id = channel_id
-
-        # Check if channel is allowed
         if not await is_channel_allowed(channel_id, user_id or "unknown", self.app.client):
-            return  # Silently ignore unauthorized channels
+            return
 
         if text and any(phrase in text.lower() for phrase in [
             "encontrei o arquivo", "você pode acessá-lo", "estou à disposição",
@@ -376,30 +412,85 @@ class SlackSocketModeServer:
             else:
                 logger.warning("Failed to fetch thread history.")
 
-        # Use a semaphore to limit concurrency (allows up to max_concurrency simultaneous requests)
+        # --- Visual spinner logic ---
         async with agent_semaphore:
+            spinner_symbols = ["𖧹", "๏"]
+            spinner_idx = 0
+            stop_event = asyncio.Event()
+            spinner_msg = await say(text="`𖧹`", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            message_ts = spinner_msg.get("ts")
+
+            async def spinner_task_func():
+                nonlocal spinner_idx
+                while not stop_event.is_set():
+                    spinner_idx = (spinner_idx + 1) % 2
+                    try:
+                        await self.app.client.chat_update(
+                            channel=original_channel_id,
+                            ts=message_ts,
+                            text=f"`{spinner_symbols[spinner_idx]}`"
+                        )
+                    except Exception as update_error:
+                        logger.warning(f"Spinner update failed: {update_error}")
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
+
+            spinner_task = asyncio.create_task(spinner_task_func())
+
+            def get_response_tag():
+                image_generation_keywords = [
+                    "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
+                    "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
+                ]
+                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    return "ImageGen"
+                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    return "Vision"
+                return "ChatAgent"
+
+            tag = get_response_tag()
+            header = f"`⛭{tag}`\n\n"
+
             try:
                 logger.info(
                     f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent..."
                 )
 
-                # Process image URLs if any
                 processed_image_urls = []
                 if image_urls:
                     logger.info(f"Processing {len(image_urls)} images...")
                     processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
 
-                # Delegate processing to the agent with image support (using streaming)
                 response = await process_message(agent, context_input, processed_image_urls)
+                stop_event.set()
+                try:
+                    await spinner_task
+                except Exception:
+                    pass
 
-                # Always respond in the original channel
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {response}")
-                formatted_response = format_message_for_slack(str(response))
-                await say(text=formatted_response, channel=original_channel_id, thread_ts=thread_ts_for_reply)
+
+                formatted_response = header + format_message_for_slack(str(response))
+                await self.app.client.chat_update(
+                    channel=original_channel_id,
+                    ts=message_ts,
+                    text=formatted_response
+                )
             except Exception as e:
+                stop_event.set()
+                try:
+                    await spinner_task
+                except Exception:
+                    pass
                 logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
-                await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                await self.app.client.chat_update(
+                    channel=original_channel_id,
+                    ts=message_ts,
+                    text=f"Sorry, I encountered an error: {str(e)}"
+                )
 
     def _extract_image_urls(self, event: Dict[str, Any]) -> List[str]:
         """Extract image URLs from Slack event."""
