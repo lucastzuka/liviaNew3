@@ -79,3 +79,19 @@ liviaNEW3/
 - **OpenAI Agents SDK**: Orquestração de agentes com **streaming nativo** + **FileSearchTool**
 - **OpenAI Responses API**: Para MCPs remotos com **streaming**
 - **Zapier Remote MCPs**: Sistema modular de automação
+
+---
+
+### 🧠 Concorrência (Concurrency): 
+O bot agora suporta verdadeira concorrência: cada thread do Slack (ou DM) recebe seu próprio lock assíncrono, permitindo que várias conversas sejam processadas em paralelo. Não existe mais travamento global (`agent_lock` removido). Mensagens na MESMA thread/DM continuam protegidas por lock sequencial (para evitar respostas embaralhadas), mas mensagens em threads ou DMs diferentes executam ao mesmo tempo, liberando todo o potencial de throughput multiusuário do Livia.
+
+#### 🏗️ **Core Architecture**
+- **agent.py**: Agente OpenAI com sistema modular de MCPs + **STREAMING** + **FILE SEARCH**
+- **server.py**: Servidor Slack Socket Mode com Bolt for Python + **STREAMING** + **THREAD DETECTION**
+- **slack_formatter.py**: Conversão inteligente markdown → Slack format
+
+#### 🛠️ **Tools & Integrations**
+- **tools/**: Módulo de ferramentas (WebSearch, ImageProcessor, ImageGeneration)
+- **OpenAI Agents SDK**: Orquestração de agentes com **streaming nativo** + **FileSearchTool**
+- **OpenAI Responses API**: Para MCPs remotos com **streaming**
+- **Zapier Remote MCPs**: Sistema modular de automação
