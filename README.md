@@ -35,6 +35,19 @@
 - **🏗️ Arquitetura Híbrida**: Combina Agents SDK + Responses API.
 - **🔧 Sistema Modular**: Organizado e facilmente extensíveis.
 
+## Limite de Concorrência (Atendimentos Simultâneos)
+
+Livia suporta atendimento simultâneo de múltiplos usuários/requisições, limitado por um semáforo global configurável via variável de ambiente:
+
+- **LIVIA_MAX_CONCURRENCY**: número máximo de atendimentos/processamentos paralelos da Livia.  
+  Exemplo no `.env`:
+  ```
+  LIVIA_MAX_CONCURRENCY=5
+  ```
+  O valor padrão é 5 se não especificado. Recomendado: ajuste entre 3 e 10 conforme recursos e limites de API.
+
+Esse mecanismo garante escalabilidade sem risco de respostas misturadas ou sobrecarga de custos/rate limits.
+
 ## 🚀 Configuração e Instalação
 **🎯 Descoberta Importante**: Os agentes e MCPs funcionam muito bem com **JSON Mode** para respostas estruturadas!
 

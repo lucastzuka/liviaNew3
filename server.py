@@ -37,7 +37,17 @@ logger = logging.getLogger(__name__)
 # Global Variables
 # TODO: SLACK_INTEGRATION_POINT - Variáveis globais para integração com Slack
 agent = None  # Agente OpenAI principal
-# REMOVIDO: agent_lock = asyncio.Lock()  # Lock para concorrência (não usar lock global para multiusuário)
+
+# Concurrency semaphore for multi-user handling
+import math
+try:
+    max_concurrency = int(os.environ.get("LIVIA_MAX_CONCURRENCY", "5"))
+    if max_concurrency &lt; 1:
+        raise ValueError
+except Exception:
+    logger.warning("Invalid LIVIA_MAX_CONCURRENCY, falling back to 5")
+    max_concurrency = 5
+agent_semaphore = asyncio.Semaphore(max_concurrency)
 processed_messages = set()  # Cache de mensagens processadas
 bot_user_id = "U057233T98A"  # ID do bot no Slack - IMPORTANTE para detectar menções
 
@@ -169,8 +179,10 @@ class SlackSocketModeServer:
         image_urls: Optional[List[str]] = None, audio_files: Optional[List[dict]] = None,
         use_thread_history: bool = True, user_id: str = None
     ):
-        """Sends message to agent and posts streaming response to Slack."""
-        global agent
+        """Sends message to agent and posts streaming response to Slack.
+        Concurrency is limited by a global asyncio.Semaphore (agent_semaphore).
+        """
+        global agent, agent_semaphore
         if not agent: # Check if agent is ready
             logger.error("Livia agent not ready.")
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
@@ -224,11 +236,12 @@ class SlackSocketModeServer:
             else:
                 logger.warning("Failed to fetch thread history.")
 
-        # REMOVIDO: async with agent_lock: # Não usar lock global, cada request é independente agora!
-        try:
-            logger.info(
-                f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent with STREAMING..."
-            )
+        # Use a semaphore to limit concurrency (allows up to max_concurrency simultaneous requests)
+        async with agent_semaphore:
+            try:
+                logger.info(
+                    f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent with STREAMING..."
+                )
 
             # Check if this is an image generation request
             image_generation_keywords = [
@@ -289,48 +302,50 @@ class SlackSocketModeServer:
             response = await process_message(agent, context_input, processed_image_urls, stream_callback)
 
             # Final update with complete response
-            try:
-                formatted_response = format_message_for_slack(str(response))
-                await self.app.client.chat_update(
-                    channel=original_channel_id,
-                    ts=message_ts,
-                    text=formatted_response
-                )
-            except Exception as final_update_error:
-                logger.warning(f"Failed to update final message: {final_update_error}")
-                # Fallback: post new message
-                await say(text=str(response), channel=original_channel_id, thread_ts=thread_ts_for_reply)
-
-            logger.info(
-                f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}"
-            )
-            formatted_response = format_message_for_slack(str(response))
-            logger.info(
-                f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE (STREAMING): {formatted_response}"
-            )
-
-        except Exception as e:
-            logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)
-            # Try to update the initial message with error
-            try:
-                if 'message_ts' in locals():
+                try:
+                    formatted_response = format_message_for_slack(str(response))
                     await self.app.client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
-                        text=f"Sorry, I encountered an error: {str(e)}"
+                        text=formatted_response
                     )
-                else:
+                except Exception as final_update_error:
+                    logger.warning(f"Failed to update final message: {final_update_error}")
+                    # Fallback: post new message
+                    await say(text=str(response), channel=original_channel_id, thread_ts=thread_ts_for_reply)
+
+                logger.info(
+                    f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}"
+                )
+                formatted_response = format_message_for_slack(str(response))
+                logger.info(
+                    f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE (STREAMING): {formatted_response}"
+                )
+
+            except Exception as e:
+                logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)
+                # Try to update the initial message with error
+                try:
+                    if 'message_ts' in locals():
+                        await self.app.client.chat_update(
+                            channel=original_channel_id,
+                            ts=message_ts,
+                            text=f"Sorry, I encountered an error: {str(e)}"
+                        )
+                    else:
+                        await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                except:
                     await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
-            except:
-                await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
 
     # --- Message Processing & Response Method ---
     async def _process_and_respond(
         self, text: str, say: slack_bolt.Say, channel_id: str, thread_ts_for_reply: Optional[str] = None,
         image_urls: Optional[List[str]] = None, use_thread_history: bool = True, user_id: str = None
     ):
-        """Sends message to agent and posts response to Slack."""
-        global agent
+        """Sends message to agent and posts response to Slack.
+        Concurrency is limited by a global asyncio.Semaphore (agent_semaphore).
+        """
+        global agent, agent_semaphore
         if not agent: # Check if agent is ready
             logger.error("Livia agent not ready.")
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
@@ -361,29 +376,30 @@ class SlackSocketModeServer:
             else:
                 logger.warning("Failed to fetch thread history.")
 
-        # REMOVIDO: async with agent_lock: # Não usar lock global, cada request é independente agora!
-        try:
-            logger.info(
-                f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent..."
-            )
+        # Use a semaphore to limit concurrency (allows up to max_concurrency simultaneous requests)
+        async with agent_semaphore:
+            try:
+                logger.info(
+                    f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent..."
+                )
 
-            # Process image URLs if any
-            processed_image_urls = []
-            if image_urls:
-                logger.info(f"Processing {len(image_urls)} images...")
-                processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
+                # Process image URLs if any
+                processed_image_urls = []
+                if image_urls:
+                    logger.info(f"Processing {len(image_urls)} images...")
+                    processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
 
-            # Delegate processing to the agent with image support (using streaming)
-            response = await process_message(agent, context_input, processed_image_urls)
+                # Delegate processing to the agent with image support (using streaming)
+                response = await process_message(agent, context_input, processed_image_urls)
 
-            # Always respond in the original channel
-            logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
-            logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {response}")
-            formatted_response = format_message_for_slack(str(response))
-            await say(text=formatted_response, channel=original_channel_id, thread_ts=thread_ts_for_reply)
-        except Exception as e:
-            logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
-            await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                # Always respond in the original channel
+                logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
+                logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {response}")
+                formatted_response = format_message_for_slack(str(response))
+                await say(text=formatted_response, channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            except Exception as e:
+                logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
+                await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
 
     def _extract_image_urls(self, event: Dict[str, Any]) -> List[str]:
         """Extract image URLs from Slack event."""
@@ -703,15 +719,10 @@ class SlackSocketModeServer:
             """
             SLACK_INTEGRATION_POINT - Handler principal para mensagens do Slack
 
-            Lógica atual:
-            - Só responde em threads que começaram com menção ao bot
-            - Processa áudio automaticamente
-            - Aplica filtros de segurança (canais/usuários permitidos)
-
-            TODO: Aqui é onde o agente processa mensagens do Slack
+            Habilitado para concorrência: agora, após todas as validações, cada mensagem é processada em paralelo
+            até o limite de LIVIA_MAX_CONCURRENCY usando asyncio.Semaphore.
             """
             event = body.get("event", {})
-
 
             # Check if message has audio files even if text is empty
             audio_files = self._extract_audio_files(event)
@@ -776,14 +787,17 @@ class SlackSocketModeServer:
             if should_process:
                 image_urls = self._extract_image_urls(event)
                 audio_files = self._extract_audio_files(event)
-                await self._process_and_respond_streaming(
-                    text=text,
-                    say=say,
-                    channel_id=channel_id,
-                    thread_ts_for_reply=thread_ts,
-                    image_urls=image_urls,
-                    audio_files=audio_files,
-                    user_id=event.get("user")
+                # Spawn processing as a background task to enable high concurrency
+                asyncio.create_task(
+                    self._process_and_respond_streaming(
+                        text=text,
+                        say=say,
+                        channel_id=channel_id,
+                        thread_ts_for_reply=thread_ts,
+                        image_urls=image_urls,
+                        audio_files=audio_files,
+                        user_id=event.get("user")
+                    )
                 )
 
         @self.app.event("app_mention")
@@ -791,15 +805,10 @@ class SlackSocketModeServer:
             """
             SLACK_INTEGRATION_POINT - Handler para menções diretas ao bot (@livia)
 
-            Lógica atual:
-            - Detecta quando o bot é mencionado
-            - Inicia nova thread ou responde em thread existente
-            - Remove a menção do texto antes de processar
-
-            TODO: Ponto principal onde o bot é "chamado" pelo usuário
+            Habilitado para concorrência: após validações, o processamento é feito em background task,
+            permitindo dezenas de execuções simultâneas até o limite do semáforo global.
             """
             event = body.get("event", {})
-
 
             if event.get("user") == "U057233T98A":  # Bot user ID
                 logger.info("Ignoring app mention from bot itself")
@@ -858,15 +867,18 @@ class SlackSocketModeServer:
                 processed_messages.clear()
                 logger.info("Cleared processed messages cache")
 
-            await self._process_and_respond_streaming(
-                text=text,
-                say=say,
-                channel_id=channel_id,
-                thread_ts_for_reply=thread_ts,
-                image_urls=image_urls,
-                audio_files=audio_files,
-                use_thread_history=False,  # Don't use history for initial mentions
-                user_id=event.get("user")
+            # Spawn processing as a background task to enable high concurrency
+            asyncio.create_task(
+                self._process_and_respond_streaming(
+                    text=text,
+                    say=say,
+                    channel_id=channel_id,
+                    thread_ts_for_reply=thread_ts,
+                    image_urls=image_urls,
+                    audio_files=audio_files,
+                    use_thread_history=False,  # Don't use history for initial mentions
+                    user_id=event.get("user")
+                )
             )
 
         @self.app.event("file_shared")
