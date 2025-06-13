@@ -1,52 +1,59 @@
 # 🤖 Livia - Slack Chatbot Agent
 
-Livia é um chatbot inteligente para Slack que usa **OpenAI Agents SDK** e **API Responses**. Ela responde apenas em threads que mencionam o bot na primeira mensagem e inclui ferramentas avançadas como busca na web, visão de imagens e automação via Zapier.
+**Livia é um chatbot inteligente para Slack com integração completa da API do Slack usando Bolt for Python.** Ela usa **OpenAI Agents SDK** e **API Responses** para fornecer uma experiência de IA avançada diretamente no Slack, respondendo apenas quando mencionada na primeira mensagem de threads.
 
-## ✨ Características
+## ✨ Características Principais
 
-- **🎯 Resposta Inteligente**: Responde apenas em threads que começam com uma menção ao bot
-- **⚡ STREAMING EM TEMPO REAL**: Respostas aparecem progressivamente conforme são geradas pela IA
-- **🚀 SUPER OTIMIZADO**: 85-93% redução de latência + streaming 2x mais rápido (0.5s vs 1s)
-- **🛠️ Ferramentas Avançadas**:
-  - 🔍 **Web Search Tool** - Busca informações atuais na internet, notícias e fatos
-  - 📄 **File Search Tool** - Busca em documentos e base de conhecimento com citações
-  - 🎵 **Audio Transcription** - Transcrição de áudios enviados pelo Slack para texto
-  - 👁️ **Image Vision** - Análise de imagens enviadas via Slack ou URLs
-  - 🎨 **Image Generation** - Geração de imagens de alta qualidade usando gpt-image-1
-  - 📋 **Asana Integration** - Gerenciamento de projetos e tarefas via MCP
-  - ⚡ **Zapier Automation** - Integração com Google Drive, Gmail e outras ferramentas
-  - 🔧 **Slack MCP Tools** - Ferramentas nativas do Slack via Model Context Protocol
-  - ✨ **Formatação Perfeita** - Conversão automática de markdown para Slack
-    - `**negrito**` → `*negrito*`
-    - Links inteligentes com texto descritivo
-    - `[texto](url)` → `<url|texto>` clicável
-    - URLs longas viram títulos curtos
-- **🚀 OpenAI Agents SDK**: Usa a mais recente tecnologia de agentes da OpenAI
-- **🔄 API Responses**: Utiliza a nova API Responses da OpenAI para automação
-- **🛡️ Proteção Anti-Loop**: Sistema robusto contra respostas infinitas
+### 🎯 **Integração Slack Completa**
+- **✅ Slack Socket Mode**: Conexão em tempo real usando Bolt for Python (framework oficial)
+- **✅ Thread Detection**: Responde apenas em threads que começam com menção ao bot
+- **✅ Multi-Channel Support**: Funciona em canais públicos, privados, grupos e DMs
+- **✅ Security Whitelist**: Sistema de segurança para desenvolvimento com canais/usuários permitidos
+- **✅ Anti-Loop Protection**: Proteção robusta contra respostas infinitas
+
+### ⚡ **Performance e Streaming**
+- **🚀 STREAMING EM TEMPO REAL**: Respostas aparecem progressivamente como no ChatGPT
+- **⚡ SUPER OTIMIZADO**: 85-93% redução de latência + streaming 2x mais rápido (0.5s vs 1s)
+- **🔄 Rate Limiting Inteligente**: Atualizações otimizadas (10 chars ou 0.5s)
 - **📱 Experiência ChatGPT no Slack**: Interface de conversação fluida e responsiva
 
-## Configuração
+### 🛠️ **Ferramentas Avançadas**
+- **🔍 Web Search Tool** - Busca informações atuais na internet, notícias e fatos
+- **📄 File Search Tool** - Busca semântica em documentos com citações automáticas
+- **🎵 Audio Transcription** - Transcrição de áudios (mp3, wav, m4a, ogg, flac, webm)
+- **👁️ Image Vision** - Análise de imagens com IA gpt-4.1 (PNG, JPEG, WEBP, GIF)
+- **🎨 Image Generation** - Geração de imagens usando gpt-image-1 com streaming
+- **⚡ 9 MCPs Zapier** - Asana, Google Drive, Gmail, Calendar, Docs, Analytics, etc.
+- **✨ Formatação Slack Perfeita** - Conversão automática markdown → Slack
+  - `**negrito**` → `*negrito*`
+  - `[texto](url)` → `<url|texto>` clicável
+  - URLs longas viram títulos descritivos
+
+### 🏗️ **Arquitetura Avançada**
+- **🚀 OpenAI Agents SDK**: Tecnologia de agentes mais recente da OpenAI
+- **🔄 OpenAI Responses API**: Para MCPs remotos com streaming
+- **🏗️ Arquitetura Híbrida**: Combina Agents SDK (local) + Responses API (remoto)
+- **🔧 Sistema Modular**: MCPs organizados e facilmente extensíveis
+
+## 🚀 Configuração e Instalação
 
 ### 1. Pré-requisitos
 
-- Python 3.8+
-- Node.js (para npx)
-- Conta OpenAI com acesso à API
-- Workspace do Slack com permissões de administrador
+- **Python 3.11+** (requerido para MCPServerStdio)
+- **Node.js** (para npx e MCPs)
+- **Conta OpenAI** com acesso à API
+- **Workspace do Slack** com permissões de administrador
+- **Conda** (recomendado para gerenciamento de ambiente)
 
 ### 2. Instalação Rápida
 
 ```bash
 # Clone o repositório
-git clone <repository-url>
+git clone https://github.com/lucastzuka/liviaNew3.git
 cd liviaNEW3
 
-# Crie um ambiente virtual
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate  # Windows
+# Ative o ambiente conda base (Python 3.12)
+conda activate base
 
 # Instale as dependências
 pip install -r requirements.txt
@@ -55,16 +62,20 @@ pip install -r requirements.txt
 npm install -g npx
 ```
 
-### 3. Configuração do Slack
+### 3. Configuração do Slack App
 
-1. Acesse [https://api.slack.com/apps](https://api.slack.com/apps)
-2. Clique em "Create New App" → "From an app manifest"
-3. Use o seguinte manifest JSON:
+#### 📋 **Passo a Passo Completo:**
+
+1. **Acesse** [https://api.slack.com/apps](https://api.slack.com/apps)
+2. **Clique** em "Create New App" → "From an app manifest"
+3. **Cole o manifest JSON** abaixo:
 
 ```json
 {
     "display_information": {
-        "name": "Livia"
+        "name": "Livia",
+        "description": "Chatbot inteligente com IA para automação e produtividade",
+        "background_color": "#011E41"
     },
     "features": {
         "bot_user": {
@@ -82,7 +93,10 @@ npm install -g npx
                 "reactions:write",
                 "users:read",
                 "conversations:history",
-                "files:read"
+                "files:read",
+                "groups:read",
+                "im:read",
+                "mpim:read"
             ]
         }
     },
@@ -92,7 +106,12 @@ npm install -g npx
                 "app_mention",
                 "message.im",
                 "message.groups",
-                "message.channels"
+                "message.channels",
+                "message.mpim",
+                "file_shared",
+                "app_home_opened",
+                "file_change",
+                "reaction_added"
             ]
         },
         "interactivity": {
@@ -105,8 +124,12 @@ npm install -g npx
 }
 ```
 
-4. Instale o app no workspace
-5. Copie os tokens necessários
+4. **Configure Socket Mode**:
+   - Vá em "Socket Mode" → Enable Socket Mode
+   - Gere um App-Level Token (scope: `connections:write`)
+
+5. **Instale o app** no workspace
+6. **Copie os tokens** necessários (Bot Token e App-Level Token)
 
 ### 4. Configuração de Ambiente
 
@@ -118,11 +141,25 @@ cp .env.example .env
 nano .env
 ```
 
-Preencha com:
-- `SLACK_BOT_TOKEN`: Token do bot (xoxb-...)
-- `SLACK_APP_TOKEN`: Token do app (xapp-...)
-- `SLACK_TEAM_ID`: ID do workspace (T...)
-- `OPENAI_API_KEY`: Sua chave da API OpenAI
+**📝 Preencha as variáveis obrigatórias:**
+```bash
+# Slack Configuration
+SLACK_BOT_TOKEN=xoxb-your-bot-token-here
+SLACK_APP_TOKEN=xapp-your-app-token-here
+SLACK_TEAM_ID=T1234567890
+
+# OpenAI Configuration
+OPENAI_API_KEY=sk-your-openai-api-key-here
+
+# File Search (opcional)
+VECTOR_STORE_ID=vs_683e3a1ac4808191ae5e6fe24392e609
+```
+
+**🔑 Como obter os tokens:**
+- **SLACK_BOT_TOKEN**: OAuth & Permissions → Bot User OAuth Token (xoxb-...)
+- **SLACK_APP_TOKEN**: Basic Information → App-Level Tokens (xapp-...)
+- **SLACK_TEAM_ID**: Workspace Settings → Workspace ID (T...)
+- **OPENAI_API_KEY**: OpenAI Platform → API Keys
 
 ### 5. Integrações Disponíveis
 
@@ -204,48 +241,75 @@ Sistema modular de integração com Zapier Remote MCP para automação de workfl
 3. Defina palavras-chave para roteamento automático
 4. Pronto! O sistema detecta e roteia automaticamente
 
-## 🚀 Inicialização Rápida
+## 🚀 Inicialização e Execução
 
-### ⚡ Comando Único (Recomendado)
+### ⚡ **Comando Único (Recomendado)**
 
 ```bash
 # Use o script automático - NUNCA MAIS DÁ ERRO!
 ./start-livia.sh
 ```
 
-**O script faz tudo automaticamente:**
+**🎯 O script faz tudo automaticamente:**
 - ✅ Verifica se o arquivo .env existe
 - ✅ Carrega todas as variáveis de ambiente
-- ✅ Valida configurações essenciais
+- ✅ Valida configurações essenciais (OPENAI_API_KEY, SLACK_BOT_TOKEN)
+- ✅ Ativa ambiente conda base (Python 3.12)
+- ✅ Verifica compatibilidade Python 3.11+
 - ✅ Mostra funcionalidades ativas
 - ✅ Executa o servidor com logs informativos
 - ✅ **NUNCA MAIS** erro de configuração!
 
-### 📝 Método Manual (se preferir)
+### 📝 **Método Manual (alternativo)**
 
 ```bash
+# Ative o ambiente conda
+conda activate base
+
 # Carregue as variáveis de ambiente
 export $(cat .env | xargs)
 
 # Execute o servidor
-python server.py
+python3 server.py
 ```
 
-## Uso
+### 🔍 **Verificação de Status**
 
-### Como Usar no Slack
+Quando o servidor iniciar, você verá:
+```
+🚀 Iniciando Livia Slack Chatbot...
+✅ Variáveis de ambiente carregadas
+🐍 Usando Python: Python 3.12.2
+✅ Versão do Python compatível com MCPServerStdio
+🤖 Iniciando servidor...
+⚡️ Bolt app is running!
+```
 
-1. **Mencione a Livia** em um canal para iniciar uma conversa:
+## 📱 Como Usar no Slack
+
+### 🎯 **Comportamento Inteligente**
+
+A Livia foi projetada para ser **não-intrusiva** e **contextual**:
+
+- ✅ **Responde apenas quando mencionada** na primeira mensagem de uma thread
+- ✅ **Funciona em todos os tipos** de conversação (canais públicos, privados, grupos, DMs)
+- ✅ **Mantém contexto** da thread para conversas contínuas
+- ✅ **Proteção anti-spam** - não responde em threads não iniciadas por menção
+
+### 🚀 **Iniciando uma Conversa**
+
+1. **Mencione a Livia** em qualquer canal ou DM:
    ```
    @Livia Olá! Como você pode me ajudar?
    ```
 
-2. **🚀 EXPERIÊNCIA STREAMING**: Veja as respostas aparecendo em tempo real!
+2. **🎬 EXPERIÊNCIA STREAMING**: Veja as respostas aparecendo em tempo real!
    - ✅ Mensagem inicial: "🤔 Pensando..."
    - ✅ Texto aparece progressivamente conforme IA gera
    - ✅ Experiência similar ao ChatGPT web interface
+   - ✅ Atualizações inteligentes (10 chars ou 0.5s)
 
-3. **Continue a conversa na thread** - Livia responderá apenas em threads que começaram com uma menção
+3. **Continue a conversa na thread** - Livia responderá automaticamente em mensagens subsequentes da mesma thread
 
 4. **Envie imagens** para análise:
    - **Upload direto**: Faça upload de uma imagem no Slack
@@ -349,32 +413,43 @@ A Livia possui capacidades avançadas de visão computacional usando o modelo **
 
 ## 🏗️ Arquitetura
 
-### 📁 Estrutura do Projeto
+### 📁 **Estrutura do Projeto**
 ```
 liviaNEW3/
-├── 🤖 agent.py              # Agente principal + MCPs Zapier
-├── 🌐 server.py             # Servidor Slack Socket Mode
+├── 🤖 agent.py              # Agente principal OpenAI + MCPs Zapier
+├── 🌐 server.py             # Servidor Slack Socket Mode COMPLETO
 ├── 🛠️ tools/                # Ferramentas modulares
-│   ├── __init__.py         # Exportações
+│   ├── __init__.py         # ImageProcessor + exportações
 │   ├── web_search.py       # 🔍 WebSearchTool
-│   └── image_vision.py     # 👁️ Processamento de imagens
+│   ├── image_generation.py # 🎨 ImageGenerationTool
+│   └── mcp/               # MCPs Zapier organizados
+│       ├── __init__.py
+│       └── zapier_mcps.py  # Configurações centralizadas
 ├── 📋 slack_formatter.py    # Formatação Slack (markdown → Slack)
 ├── 📦 requirements.txt      # Dependências Python
-├── 🚀 start-livia.sh        # Script de inicialização
+├── 🚀 start-livia.sh        # Script de inicialização automática
 ├── 📖 README.md            # Documentação completa
 └── 🔒 .env                 # Variáveis de ambiente (não versionado)
 ```
 
-### 🔧 Componentes Principais
-- **agent.py**: Define a Livia com sistema modular de MCPs do Zapier + **STREAMING** + **FILE SEARCH**
-- **server.py**: Servidor Socket Mode do Slack com proteção anti-loop + **STREAMING**
-- **tools/**: Módulo de ferramentas (WebSearch, ImageProcessor)
-- **OpenAI Agents SDK**: Orquestração de agentes inteligentes com **streaming nativo** + **FileSearchTool**
-- **MCP Local**: Comunicação com APIs locais (Slack) com **streaming**
-- **Zapier Remote MCPs**: Sistema modular de automação via API Responses com **streaming**
-- **API Responses**: Nova API da OpenAI para agentes e automação com **streaming**
-- **🚀 STREAMING ENGINE**: Sistema de atualizações em tempo real no Slack
+### 🔧 **Componentes Principais**
+
+#### 🏗️ **Core Architecture**
+- **agent.py**: Agente OpenAI com sistema modular de MCPs + **STREAMING** + **FILE SEARCH**
+- **server.py**: Servidor Slack Socket Mode com Bolt for Python + **STREAMING** + **THREAD DETECTION**
+- **slack_formatter.py**: Conversão inteligente markdown → Slack format
+
+#### 🛠️ **Tools & Integrations**
+- **tools/**: Módulo de ferramentas (WebSearch, ImageProcessor, ImageGeneration)
+- **OpenAI Agents SDK**: Orquestração de agentes com **streaming nativo** + **FileSearchTool**
+- **OpenAI Responses API**: Para MCPs remotos com **streaming**
+- **Zapier Remote MCPs**: Sistema modular de automação (9 integrações ativas)
+
+#### ⚡ **Advanced Features**
+- **🚀 STREAMING ENGINE**: Atualizações em tempo real no Slack
 - **📄 FILE SEARCH**: Busca semântica em base de conhecimento com citações
+- **🔒 SECURITY SYSTEM**: Whitelist de canais/usuários para desenvolvimento
+- **🛡️ ANTI-LOOP PROTECTION**: Proteção robusta contra respostas infinitas
 
 ### 🏗️ Arquitetura Modular dos MCPs
 
@@ -634,26 +709,90 @@ npx -y @roychri/mcp-server-asana
 
 ## 📝 Histórico de Versões
 
-### 🚀 v2.2.0 - Atual (Janeiro 2025)
-- ✅ **File Search Tool**: Busca semântica em documentos com citações automáticas
-- ✅ **Streaming em Tempo Real**: Respostas progressivas similar ao ChatGPT
-- ✅ **9 MCPs Zapier**: Asana, Google Drive, Gmail, Calendar, Docs, Analytics, etc.
-- ✅ **Otimizações de Performance**: 85-93% redução de latência
-- ✅ **Formatação Perfeita**: Conversão automática markdown → Slack
-- ✅ **Transcrição de Áudio**: Suporte a múltiplos formatos
-- ✅ **Visão de Imagens**: Análise com IA gpt-4.1
-- ✅ **Proteção Anti-Loop**: Sistema robusto contra respostas infinitas
+### 🚀 **v3.0.0 - Atual (Junho 2025) - INTEGRAÇÃO SLACK COMPLETA**
+- ✅ **🔗 Slack API Integration**: Integração completa usando Bolt for Python (framework oficial)
+- ✅ **🧵 Thread Detection**: Sistema inteligente de detecção de threads e menções
+- ✅ **⚡ Socket Mode**: Conexão em tempo real sem necessidade de URLs públicas
+- ✅ **🔒 Security System**: Whitelist de canais/usuários para desenvolvimento seguro
+- ✅ **🛡️ Anti-Loop Protection**: Proteção avançada contra respostas infinitas
+- ✅ **📱 Multi-Channel Support**: Canais públicos, privados, grupos e DMs
+- ✅ **🚀 Streaming em Tempo Real**: Respostas progressivas como ChatGPT
+- ✅ **🎨 Image Generation**: Geração de imagens com gpt-image-1 e streaming
+- ✅ **👁️ Image Vision**: Análise de imagens com IA gpt-4.1
+- ✅ **🎵 Audio Transcription**: Transcrição de áudios em múltiplos formatos
+- ✅ **📄 File Search Tool**: Busca semântica em documentos com citações
+- ✅ **🔍 Web Search**: Busca na internet com informações atuais
+- ✅ **⚡ 9 MCPs Zapier**: Asana, Google Drive, Gmail, Calendar, Docs, Analytics, etc.
+- ✅ **✨ Formatação Perfeita**: Conversão automática markdown → Slack
+- ✅ **🎯 Performance Otimizada**: 85-93% redução de latência
 
-### 🎯 Conquistas Técnicas
-- 🏆 Primeira implementação de streaming em chatbot Slack com OpenAI APIs
-- 🏆 Arquitetura híbrida combinando Responses API e Agents SDK
-- 🏆 Sistema modular de MCPs plug-and-play
-- 🏆 Experiência ChatGPT nativa no Slack
+### 🎯 **Conquistas Técnicas Revolucionárias**
+- 🏆 **Primeira integração Slack completa** com OpenAI Agents SDK + Responses API
+- 🏆 **Arquitetura híbrida inovadora** combinando Agents SDK (local) + Responses API (remoto)
+- 🏆 **Sistema de streaming nativo** em chatbot Slack com rate limiting inteligente
+- 🏆 **Thread detection avançado** - responde apenas quando mencionado na primeira mensagem
+- 🏆 **Sistema modular de MCPs** plug-and-play com roteamento automático
+- 🏆 **Experiência ChatGPT nativa** diretamente no Slack
+- 🏆 **Security-first design** com whitelist e proteção anti-loop
 
-## Licença
+## 🧪 **Testando a Integração**
 
-MIT License
+### ✅ **Status: TOTALMENTE FUNCIONAL**
 
-## Suporte
+A integração Slack está **100% operacional**. Para testar:
 
-Para suporte, abra uma issue no repositório ou entre em contato.
+#### 🎯 **Testes Básicos**
+```
+@Livia Olá! Como você está?
+@Livia pesquise sobre inteligência artificial
+@Livia procure informações sobre diretrizes da empresa
+```
+
+#### 🛠️ **Testes de Ferramentas**
+```
+@Livia gere uma imagem de um gato fofo
+[Enviar uma imagem] @Livia o que você vê nesta imagem?
+[Enviar um áudio] @Livia transcreva este áudio
+```
+
+#### ⚡ **Testes de MCPs**
+```
+@Livia crie uma tarefa no Asana
+@Livia busque arquivos no Google Drive
+@Livia envie um email
+@Livia agende uma reunião
+```
+
+### 📊 **Logs de Funcionamento**
+
+Quando funcionar corretamente, você verá logs como:
+```
+2025-06-11 23:47:21,957 - __main__ - INFO - Message: '<@U057233T98A> oi', Channel: C059NNLU3E1, Thread: None
+2025-06-11 23:47:21,958 - __main__ - INFO - Mention detected in message event, will be handled by app_mention event
+2025-06-11 23:47:22,854 - __main__ - INFO - App mention - Text: '<@U057233T98A> oi', Channel: C059NNLU3E1, Thread: 1749696441.206739
+2025-06-11 23:47:23,237 - __main__ - INFO - Cleaned text after removing mention: 'oi'
+2025-06-11 23:47:23,237 - __main__ - INFO - Processing mention with text: 'oi', audio files: 0
+2025-06-11 23:47:26,770 - __main__ - INFO - USER REQUEST: oi
+2025-06-11 23:47:26,770 - __main__ - INFO - BOT RESPONSE (STREAMING): Olá! Como posso ajudar você hoje?
+```
+
+## 📞 **Suporte e Contribuição**
+
+### 🐛 **Reportar Issues**
+- Abra uma issue no [repositório GitHub](https://github.com/lucastzuka/liviaNew3/issues)
+- Inclua logs relevantes e passos para reproduzir
+
+### 🤝 **Contribuir**
+1. Fork o repositório
+2. Crie uma branch para sua feature
+3. Implemente as mudanças
+4. Teste thoroughly
+5. Submeta um pull request
+
+## 📄 **Licença**
+
+MIT License - veja o arquivo LICENSE para detalhes.
+
+---
+
+**🎉 Livia está pronta para revolucionar sua experiência no Slack com IA avançada!**
