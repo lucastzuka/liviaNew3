@@ -234,7 +234,7 @@ class SlackSocketModeServer:
 
         # --- Visual spinner logic ---
         async with agent_semaphore:
-            spinner_symbols = ["`𖧹`", "`๏`"]
+            spinner_symbols = ["𖧹", "๏"]
             spinner_idx = 0
             stop_event = asyncio.Event()
             spinner_msg = await say(text="𖧹", channel=original_channel_id, thread_ts=thread_ts_for_reply)
@@ -260,12 +260,30 @@ class SlackSocketModeServer:
 
             spinner_task = asyncio.create_task(spinner_task_func())
 
-            # --- Determine response tag ---
+            # --- Tag derivation utility ---
+            def derive_tag(tool_calls, audio_files):
+                # Priority: AudioTranscribe > ImageGen > WebSearch > FileSearch > Vision > ChatAgent
+                if audio_files:
+                    return "AudioTranscribe"
+                if tool_calls:
+                    for call in tool_calls:
+                        name = call.get("tool_name", call.get("name", "")).lower()
+                        # Special: file_search with file_names
+                        if name == "file_search":
+                            file_names = call.get("file_names")
+                            if file_names and isinstance(file_names, list) and len(file_names) > 0:
+                                return file_names[0]
+                            return "FileSearch"
+                        elif name == "web_search":
+                            return "WebSearch"
+                        elif name == "image_generation_tool":
+                            return "ImageGen"
+                        elif name in {"image_vision", "image_vision_tool"}:
+                            return "Vision"
+                return "ChatAgent"
+
+            # --- Determine initial response tag (heuristic) ---
             def get_response_tag():
-                # ImageGen → when for _handle_image_generation
-                # AudioTranscribe → when audio_files present
-                # Vision → when image_urls present and not image generation
-                # ChatAgent → fallback
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
                     "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
@@ -279,7 +297,7 @@ class SlackSocketModeServer:
                 return "ChatAgent"
 
             tag = get_response_tag()
-            header_prefix = f"`⛭ {tag}`\n\n"  # Space after icon, no backticks
+            header_prefix = f"⛭ {tag}\n\n"  # No backticks
 
             try:
                 logger.info(
@@ -351,9 +369,10 @@ class SlackSocketModeServer:
                         except Exception as update_error:
                             logger.warning(f"Failed to update streaming message: {update_error}")
 
-                # Agent streaming
+                # Agent streaming: now expects dict: { text, tools }
                 response = await process_message(agent, context_input, processed_image_urls, stream_callback)
-
+                text_resp = response.get("text") if isinstance(response, dict) else str(response)
+                tool_calls = response.get("tools") if isinstance(response, dict) else []
                 # Final update with complete response
                 if not sent_header:
                     # If for some reason we never got a chunk, stop spinner and show header
@@ -371,8 +390,12 @@ class SlackSocketModeServer:
                     except Exception as e:
                         logger.warning(f"Failed to set header after spinner: {e}")
 
+                # Compute header_prefix_final based on tools actually used
+                tag_final = derive_tag(tool_calls, audio_files)
+                header_prefix_final = f"⛭ {tag_final}\n\n"
+
                 try:
-                    formatted_response = header_prefix + format_message_for_slack(str(response))
+                    formatted_response = header_prefix_final + format_message_for_slack(text_resp)
                     await self.app.client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
@@ -471,6 +494,26 @@ class SlackSocketModeServer:
 
             spinner_task = asyncio.create_task(spinner_task_func())
 
+            # --- Tag derivation utility ---
+            def derive_tag(tool_calls, audio_files):
+                if audio_files:
+                    return "AudioTranscribe"
+                if tool_calls:
+                    for call in tool_calls:
+                        name = call.get("tool_name", call.get("name", "")).lower()
+                        if name == "file_search":
+                            file_names = call.get("file_names")
+                            if file_names and isinstance(file_names, list) and len(file_names) > 0:
+                                return file_names[0]
+                            return "FileSearch"
+                        elif name == "web_search":
+                            return "WebSearch"
+                        elif name == "image_generation_tool":
+                            return "ImageGen"
+                        elif name in {"image_vision", "image_vision_tool"}:
+                            return "Vision"
+                return "ChatAgent"
+
             def get_response_tag():
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -483,7 +526,7 @@ class SlackSocketModeServer:
                 return "ChatAgent"
 
             tag = get_response_tag()
-            header_prefix = f"⛭ {tag}\n\n"  # Space after icon, no backticks
+            header_prefix = f"⛭ {tag}\n\n"  # No backticks
 
             try:
                 logger.info(
@@ -502,10 +545,15 @@ class SlackSocketModeServer:
                 except Exception:
                     pass
 
-                logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
-                logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {response}")
+                text_resp = response.get("text") if isinstance(response, dict) else str(response)
+                tool_calls = response.get("tools") if isinstance(response, dict) else []
+                tag_final = derive_tag(tool_calls, [])
+                header_prefix_final = f"⛭ {tag_final}\n\n"
 
-                formatted_response = header_prefix + format_message_for_slack(str(response))
+                logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
+                logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {text_resp}")
+
+                formatted_response = header_prefix_final + format_message_for_slack(text_resp)
                 await self.app.client.chat_update(
                     channel=original_channel_id,
                     ts=message_ts,

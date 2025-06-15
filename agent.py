@@ -96,50 +96,58 @@ async def create_agent() -> Agent:
     agent = Agent(
         name="Livia",
         instructions=(
-            """You are Livia, an intelligent chatbot assistant for Slack and works at a Brazilian advertising agency called ℓiⱴε. You are a agent in a slack chat room. You might receive messages from multiple people.
+            """You are Livia, an intelligent chatbot assistant for Slack and work at a Brazilian advertising agency called ℓiⱴε. You are an agent in a Slack chat room. You might receive messages from multiple people.
 Format bold text *like this*, italic text _like this_ and strikethrough text ~like this~.
 Slack user IDs match the regex `<@U.*?>`.
 Your Slack user ID is <@{U057233T98A}>.
 Each message has the author's Slack user ID prepended, like the regex `^<@U.*?>: ` followed by the message text."
-            "IMPORTANT: You should ONLY respond in threads where the bot was mentioned in the FIRST message of the thread. "
-            "You have access to multiple powerful tools:\n\n"
-            "🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers\n"
-            "📄 **File Search Tool**: Search through uploaded documents and files in your knowledge base for relevant information\n"
-            "👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs\n"
-            "🎨 **Image Generation Tool**: Generate high-quality images from text descriptions using gpt-image-1 model\n"
-            f"{zapier_tools_description}"
-            "**CRITICAL MCP USAGE INSTRUCTIONS:**\n"
-            "1. **Sequential Search Strategy**: When MCPs require multiple fields (workspace → project → task), perform searches step-by-step:\n"
-            "   - First: Search for workspace/organization\n"
-            "   - Second: Use workspace result to search for project\n"
-            "   - Third: Use project result to search for specific task\n"
-            "   - Example: Find workspace 'INOVAÇÃO' → Find project 'Inovação' → Find task 'Terminar Livia 2.0'\n"
-            "2. **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses in your answers:\n"
-            "   - Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'\n"
-            "   - This enables future operations using these exact IDs\n"
-            "3. **Use Exact IDs When Available**: If conversation history contains IDs, use them directly instead of searching by name\n"
-            "4. **Multiple Tool Calls**: Don't hesitate to make multiple MCP calls to complete a task properly\n\n"
-            "**Guidelines:**\n"
-            "- Use web search when you need current information, recent news, or facts you don't know\n"
-            "- Use file search when users ask about documents, files, or information from your knowledge base\n"
-            "- When users upload images or send image URLs, analyze them and provide detailed descriptions\n"
-            "- For images, describe what you see including objects, people, text, colors, and context\n"
-            "- For Google Drive searches: try multiple search strategies if first attempt fails\n"
-            "- When searching for folders/files, try partial names, different cases, and related terms\n"
-            "- If a search returns no results, suggest alternative search terms or approaches\n"
-            "- IMPORTANT: If user searches for 'TargetGroup', it's likely the file 'TargetGroupIndex_BR2024'\n"
-            "- Consider that file names may have suffixes like _BR2024, _2024, etc.\n"
-            "- Always offer to try broader or more specific search terms when initial search fails\n"
-            "- When user says 'pasta' but means 'arquivo', correct and search for files instead\n"
-            "- For document-related queries, try file search first before other tools\n"
-            "- 🔄 **Smart Routing**: Requests are automatically routed to appropriate Zapier MCPs\n"
-            "- 🎯 **Keyword Detection**: System detects intent and uses the right integration\n"
-            "- 🚨 SECURITY: NEVER use slack_post_message - responses are handled automatically\n"
-            "- 🚨 SECURITY: NEVER send messages to channels other than where you were mentioned\n"
-            "- Be helpful, concise, and professional in your responses\n"
-            "- Ask for clarification if needed\n"
-            "- Always cite sources when providing information from web searches\n"
-            "- You can help with general questions, provide information, and assist with Slack-related tasks"""
+IMPORTANT: You should ONLY respond in threads where the bot was mentioned in the FIRST message of the thread.
+
+IMPORTANT: You should NOT mention File Search or the names of files unless the user explicitly asks about documents/files. Only use file_search when you believe the user's answer is in the uploaded documents or they request it directly.
+
+IMPORTANT: It's OK to disagree with the user if it helps clarify or improve their result.
+
+You have access to multiple powerful tools:
+
+🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers
+📄 **File Search Tool**: Search through uploaded documents and files in your knowledge base for relevant information
+👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs
+🎨 **Image Generation Tool**: Generate high-quality images from text descriptions using gpt-image-1 model
+""" + f"{zapier_tools_description}" + """
+**CRITICAL MCP USAGE INSTRUCTIONS:**
+1. **Sequential Search Strategy**: When MCPs require multiple fields (workspace → project → task), perform searches step-by-step:
+   - First: Search for workspace/organization
+   - Second: Use workspace result to search for project
+   - Third: Use project result to search for specific task
+   - Example: Find workspace 'INOVAÇÃO' → Find project 'Inovação' → Find task 'Terminar Livia 2.0'
+2. **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses in your answers:
+   - Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'
+   - This enables future operations using these exact IDs
+3. **Use Exact IDs When Available**: If conversation history contains IDs, use them directly instead of searching by name
+4. **Multiple Tool Calls**: Don't hesitate to make multiple MCP calls to complete a task properly
+
+**Guidelines:**
+- Use web search when you need current information, recent news, or facts you don't know
+- Use file search when users ask about documents, files, or information from your knowledge base
+- When users upload images or send image URLs, analyze them and provide detailed descriptions
+- For images, describe what you see including objects, people, text, colors, and context
+- For Google Drive searches: try multiple search strategies if first attempt fails
+- When searching for folders/files, try partial names, different cases, and related terms
+- If a search returns no results, suggest alternative search terms or approaches
+- IMPORTANT: If user searches for 'TargetGroup', it's likely the file 'TargetGroupIndex_BR2024'
+- Consider that file names may have suffixes like _BR2024, _2024, etc.
+- Always offer to try broader or more specific search terms when initial search fails
+- When user says 'pasta' but means 'arquivo', correct and search for files instead
+- For document-related queries, try file search first before other tools
+- 🔄 **Smart Routing**: Requests are automatically routed to appropriate Zapier MCPs
+- 🎯 **Keyword Detection**: System detects intent and uses the right integration
+- 🚨 SECURITY: NEVER use slack_post_message - responses are handled automatically
+- 🚨 SECURITY: NEVER send messages to channels other than where you were mentioned
+- Be helpful, concise, and professional in your responses
+- Ask for clarification if needed
+- Always cite sources when providing information from web searches
+- You can help with general questions, provide information, and assist with Slack-related tasks
+"""
         ),
         model="gpt-4.1-mini",
         tools=[web_search_tool, file_search_tool],  # image_generation_tool temporariamente removida - erro tools[2].type
@@ -150,18 +158,13 @@ Each message has the author's Slack user ID prepended, like the regex `^<@U.*?>:
     return agent
 
 
-async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> str:
+import re
+async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> dict:
     """
     Generic function to process message using OpenAI Responses API with any Zapier Remote MCP with streaming support.
 
-    Args:
-        mcp_key: Key from ZAPIER_MCPS configuration (e.g., 'asana', 'google_drive')
-        message: User message to process
-        image_urls: Optional list of image URLs for vision processing
-        stream_callback: Optional callback function for streaming updates
-
     Returns:
-        Response text from the MCP
+        Dict: {"text": ..., "tools": [...]}
     """
     from openai import OpenAI
 
@@ -190,7 +193,10 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
     logger.info(f"Input message: {message}")
 
     try:
+        # ... (unchanged up to stream event loop)
+
         # Special handling for individual MCPs with detailed logging
+        # (code omitted, see above)
         if mcp_config["server_label"] == "zapier-mcpeverhour":
             stream = client.responses.create(
                 model="gpt-4.1-mini",
@@ -331,8 +337,6 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 stream=True
             )
 
-
-
         elif mcp_config["server_label"] == "zapier-mcpslack":
             # Special handling for Slack with message search and channel operations
             stream = client.responses.create(
@@ -414,10 +418,18 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                         "output": getattr(event, 'output', None),
                         "error": getattr(event, 'error', None)
                     }
+                    # --- FILE NAMES for file_search ---
+                    if tool_call_info["tool_name"].lower() == "file_search":
+                        output = tool_call_info.get("output", "")
+                        # Try to extract file names from output: e.g., "Arquivo encontrado: nome_do_arquivo.pdf"
+                        file_names = re.findall(r"Arquivo[s]?:?\s*([^\n,]+)", str(output), re.IGNORECASE)
+                        if not file_names:
+                            # Try to extract pdf/doc/docx/xlsx/names from output string
+                            file_names = re.findall(r"[\w\-\_]+\.(?:pdf|docx?|xlsx?|pptx?)", str(output), re.IGNORECASE)
+                        tool_call_info["file_names"] = file_names if file_names else []
                     tool_calls_made.append(tool_call_info)
                     logger.info(f"🔧 MCP TOOL CALL: {tool_call_info}")
 
-        # Detailed completion logging
         logger.info(f"📊 MCP STREAMING SUMMARY:")
         logger.info(f"   - Response length: {len(full_response)} chars")
         logger.info(f"   - Tool calls made: {len(tool_calls_made)}")
@@ -434,7 +446,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 logger.error(f"   {i}. {error['message']} (Code: {error.get('code', 'N/A')})")
 
         logger.info(f"✅ MCP Final Response: {full_response}")
-        return full_response or "No response generated."
+        return {"text": full_response or "No response generated.", "tools": tool_calls_made}
 
     except Exception as e:
         error_message = str(e)
@@ -466,10 +478,10 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                         }
                     ]
                 )
-                return simplified_response.output_text or "Não foi possível acessar os emails no momento."
+                return {"text": simplified_response.output_text or "Não foi possível acessar os emails no momento.", "tools": []}
             except Exception as retry_error:
                 logger.error(f"Gmail MCP retry also failed: {retry_error}")
-                return "❌ Não foi possível acessar os emails do Gmail no momento. O email pode ser muito grande para processar. Tente ser mais específico na busca."
+                return {"text": "❌ Não foi possível acessar os emails do Gmail no momento. O email pode ser muito grande para processar. Tente ser mais específico na busca.", "tools": []}
 
         raise
 
@@ -523,8 +535,9 @@ def get_available_zapier_mcps() -> dict:
         for mcp_key, config in ZAPIER_MCPS.items()
     }
 
-async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> str:
-    """Runs the agent with the given message and optional image URLs with streaming support, returns the final output."""
+import re
+async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> dict:
+    """Runs the agent with the given message and optional image URLs with streaming support, returns dict with 'text' and 'tools'."""
 
     # 🔍 Check if message needs a specific Zapier MCP
     mcp_needed = detect_zapier_mcp_needed(message)
@@ -546,70 +559,74 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
         logger.info(f"Processing {len(image_urls)} image(s): {image_urls}")
 
     final_output = "Sorry, I couldn't process that." # Default response
+    tool_calls_made = []
     try:
         # Start tracing for the agent workflow
         with trace(workflow_name="Livia Slack Agent Workflow", trace_id=trace_id):
             # Prepare input with images if provided
             if image_urls:
-                # Create input with both text and images for vision processing
                 input_content = [
                     {"type": "input_text", "text": message}
                 ]
-
-                # Add each image to the input
                 for image_url in image_urls:
                     input_content.append({
                         "type": "input_image",
                         "image_url": image_url,
-                        "detail": "low"  # Use low detail for cost efficiency
+                        "detail": "low"
                     })
-
                 input_data = [{
                     "role": "user",
                     "content": input_content
                 }]
             else:
-                # Text-only input
                 input_data = message
 
-            # Execute the agent with streaming
             result = Runner.run_streamed(starting_agent=agent, input=input_data)
 
-            # Process streaming events
             full_response = ""
             final_message_output = ""
 
             async for event in result.stream_events():
                 if event.type == "raw_response_event":
-                    # Handle raw response events for streaming text
                     if hasattr(event.data, 'type') and event.data.type == "response.output_text.delta":
                         delta_text = getattr(event.data, 'delta', '')
                         if delta_text:
                             full_response += delta_text
-                            # Call stream callback if provided
                             if stream_callback:
                                 await stream_callback(delta_text, full_response)
                     elif hasattr(event.data, 'type') and event.data.type == "response.completed":
                         logger.info("Agent streaming response completed")
                 elif event.type == "run_item_stream_event":
-                    # Handle higher-level events like tool calls and message outputs
                     if event.item.type == "tool_call_item":
-                        logger.info("-- Tool was called during streaming")
+                        # Collect tool call info
+                        tool_call_info = {
+                            "type": getattr(event.item, 'type', ''),
+                            "tool_name": getattr(event.item, 'name', ''),
+                            "arguments": getattr(event.item, 'arguments', {}),
+                            "output": getattr(event.item, 'output', None),
+                            "error": getattr(event.item, 'error', None)
+                        }
+                        # Special: for file_search, try to extract file_names
+                        if tool_call_info["tool_name"].lower() == "file_search":
+                            output = tool_call_info.get("output", "")
+                            file_names = re.findall(r"Arquivo[s]?:?\s*([^\n,]+)", str(output), re.IGNORECASE)
+                            if not file_names:
+                                file_names = re.findall(r"[\w\-\_]+\.(?:pdf|docx?|xlsx?|pptx?)", str(output), re.IGNORECASE)
+                            tool_call_info["file_names"] = file_names if file_names else []
+                        tool_calls_made.append(tool_call_info)
+                        logger.info(f"-- Tool was called during streaming: {tool_call_info}")
                     elif event.item.type == "tool_call_output_item":
                         logger.info(f"-- Tool output during streaming: {event.item.output}")
                     elif event.item.type == "message_output_item":
-                        # Get the final message output
                         message_text = ItemHelpers.text_message_output(event.item)
                         if message_text:
                             final_message_output = message_text
-                            # Update full response with complete message if different
                             if message_text != full_response:
                                 full_response = message_text
                                 if stream_callback:
-                                    await stream_callback("", full_response)  # Send complete message
+                                    await stream_callback("", full_response)
                         logger.info(f"-- Message output during streaming: {message_text}")
 
-            # Use the final message output if available, otherwise use accumulated response
             final_output = final_message_output or full_response or "No response generated."
 
             logger.info(f"Agent streaming run completed. Final output: '{final_output}'")
@@ -618,8 +635,7 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
         logger.error(f"Error during agent streaming run (trace_id: {trace_id}): {e}", exc_info=True)
         final_output = f"An error occurred while processing your request: {str(e)}"
 
-    # Ensure the output is a string
-    return str(final_output)
+    return {"text": str(final_output), "tools": tool_calls_made}
 
 
 # Standalone execution part (optional for the article, but good for context)
