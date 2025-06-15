@@ -186,7 +186,7 @@ class SlackSocketModeServer:
         """
         Sends message to agent and posts streaming response to Slack.
         Implements:
-        - Visual spinner using alternating `𖧹`/`๏` via chat_update
+        - Visual spinner using hourglass ⏳ with growing dots via chat_update
         - Header tag in format `⛭TagName` at the top of all responses
         """
         global agent, agent_semaphore
@@ -238,29 +238,32 @@ class SlackSocketModeServer:
 
         # --- Visual spinner logic ---
         async with agent_semaphore:
-            spinner_texts = ["🤔 Pensando.", "🤔 Pensando..", "🤔 Pensando..."]
+            spinner_texts = ["⏳ Pensando.", "⏳ Pensando..", "⏳ Pensando..."]
             spinner_idx = 0
             stop_event = asyncio.Event()
-            spinner_msg = await say(text="🤔 Pensando.", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            spinner_msg = await say(text="⏳ Pensando.", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             message_ts = spinner_msg.get("ts")
 
             async def spinner_task_func():
                 nonlocal spinner_idx
-                # Spinner loop: cycle through thinking dots every second using chat_update
+                # Spinner loop: cycle through hourglass dots every 0.8 seconds using chat_update
                 while not stop_event.is_set():
-                    spinner_idx = (spinner_idx + 1) % 3
                     try:
-                        await self.app.client.chat_update(
-                            channel=original_channel_id,
-                            ts=message_ts,
-                            text=spinner_texts[spinner_idx]
-                        )
-                    except Exception as update_error:
-                        logger.warning(f"Spinner update failed: {update_error}")
-                    try:
-                        await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+                        # Wait for 0.8 seconds or until stop event
+                        await asyncio.wait_for(stop_event.wait(), timeout=0.8)
+                        break  # Stop event was set, exit loop
                     except asyncio.TimeoutError:
-                        continue
+                        # Timeout reached, update spinner and continue
+                        spinner_idx = (spinner_idx + 1) % 3
+                        try:
+                            await self.app.client.chat_update(
+                                channel=original_channel_id,
+                                ts=message_ts,
+                                text=spinner_texts[spinner_idx]
+                            )
+                        except Exception as update_error:
+                            logger.warning(f"Spinner update failed: {update_error}")
+                            break  # Exit on update failure
 
             spinner_task = asyncio.create_task(spinner_task_func())
 
@@ -268,12 +271,12 @@ class SlackSocketModeServer:
             def derive_cumulative_tags(tool_calls, audio_files, image_urls, user_message=None, final_response=None):
                 """
                 Build cumulative tags showing all technologies used in the response.
-                Format: `⛭ gpt-4.1` `Vision` `WebSearch` etc.
+                Format: `⛭ gpt-4.1-mini` `Vision` `WebSearch` etc.
                 """
                 tags = []
 
                 # Always start with the model
-                tags.append("gpt-4.1")
+                tags.append("gpt-4.1-mini")
 
                 # Add Vision if images are being processed
                 if image_urls:
@@ -331,50 +334,80 @@ class SlackSocketModeServer:
                         # Skip file_search - it's always active (RAG)
                         # We don't show FileSearch tag since it's background functionality
 
-                # Enhanced detection: Check response content for web search indicators
+                # Enhanced detection: Check response content for web search indicators (more specific)
                 if final_response and "WebSearch" not in tags:
                     response_content = final_response.lower()
+
+                    # More specific web search indicators
                     web_indicators = [
-                        "brandcolorcode.com", "wikipedia.org", "google.com", "bing.com",
+                        "brandcolorcode.com", "wikipedia.org", "bing.com",
                         "utm_source=openai", "search result", "according to", "source:",
-                        "based on search", "found on", "website", ".com", ".org", ".net"
+                        "based on search", "found on", "website", "search engine"
                     ]
 
-                    # Check for URLs and web indicators
+                    # Check for specific web search patterns (exclude common URLs)
                     import re
-                    has_urls = bool(re.search(r"https?://", final_response))
+                    # Look for external URLs but exclude common internal ones
+                    external_urls = bool(re.search(r"https?://(?!drive\.google\.com|docs\.google\.com|calendar\.google\.com)", final_response))
                     has_web_indicators = any(indicator in response_content for indicator in web_indicators)
 
-                    if has_urls or has_web_indicators:
+                    # Only add WebSearch if we have clear web search indicators
+                    if (external_urls and has_web_indicators) or any(indicator in response_content for indicator in ["brandcolorcode.com", "utm_source=openai"]):
                         tags.append("WebSearch")
 
-                # Enhanced detection: Check if MCP was used based on response content
-                if final_response:
-                    response_content = final_response.lower()
+                # Enhanced detection: Check if MCP was used based on response content and user message
+                if final_response or user_message:
+                    response_content = (final_response or "").lower()
+                    message_content = (user_message or "").lower()
+                    combined_content = response_content + " " + message_content
 
                     # Google Drive MCP indicators
-                    if any(indicator in response_content for indicator in ["google drive", "my drive", "drive.google.com", "arquivo encontrado", "pasta encontrada"]):
+                    drive_indicators = ["google drive", "my drive", "drive.google.com", "arquivo encontrado", "pasta encontrada", "gdrive", "livia.png", "id:", "drive da live"]
+                    if any(indicator in combined_content for indicator in drive_indicators):
                         if "McpGoogleDrive" not in tags:
                             tags.append("McpGoogleDrive")
 
-                    # Other MCP indicators
-                    if any(indicator in response_content for indicator in ["everhour", "tempo adicionado", "task ev:"]):
+                    # Everhour MCP indicators (specific keyword only)
+                    everhour_indicators = ["everhour", "tempo adicionado", "task ev:", "ev:"]
+                    if any(indicator in combined_content for indicator in everhour_indicators):
                         if "McpEverhour" not in tags:
                             tags.append("McpEverhour")
 
-                    if any(indicator in response_content for indicator in ["asana", "projeto", "workspace"]):
+                    # Asana MCP indicators (specific keyword only)
+                    asana_indicators = ["asana"]
+                    if any(indicator in combined_content for indicator in asana_indicators):
                         if "McpAsana" not in tags:
                             tags.append("McpAsana")
 
-                    if any(indicator in response_content for indicator in ["email", "gmail", "inbox", "remetente"]):
+                    # Gmail MCP indicators (specific keyword only)
+                    gmail_indicators = ["gmail"]
+                    if any(indicator in combined_content for indicator in gmail_indicators):
                         if "McpGmail" not in tags:
                             tags.append("McpGmail")
+
+                    # Google Docs MCP indicators
+                    docs_indicators = ["google docs", "documento", "docs", "live_codigodeeticaeconduta"]
+                    if any(indicator in combined_content for indicator in docs_indicators):
+                        if "McpGoogleDocs" not in tags:
+                            tags.append("McpGoogleDocs")
+
+                    # Google Calendar MCP indicators
+                    calendar_indicators = ["calendar", "calendario", "agenda", "evento", "reunião"]
+                    if any(indicator in combined_content for indicator in calendar_indicators):
+                        if "McpGoogleCalendar" not in tags:
+                            tags.append("McpGoogleCalendar")
+
+                    # Google Sheets MCP indicators
+                    sheets_indicators = ["sheets", "google sheets", "planilha", "spreadsheet"]
+                    if any(indicator in combined_content for indicator in sheets_indicators):
+                        if "McpGoogleSheets" not in tags:
+                            tags.append("McpGoogleSheets")
 
                 return tags
 
             # --- Determine initial cumulative tags (heuristic) ---
             def get_initial_cumulative_tags():
-                initial_tags = ["gpt-4.1"]  # Always start with model
+                initial_tags = ["gpt-4.1-mini"]  # Always start with model
 
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -391,7 +424,7 @@ class SlackSocketModeServer:
                 return initial_tags
 
             initial_tags = get_initial_cumulative_tags()
-            # Format as: `⛭ gpt-4.1` `Vision` etc.
+            # Format as: `⛭ gpt-4.1-mini` `Vision` etc.
             tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
             header_prefix = f"{tag_display}\n\n"
 
@@ -438,7 +471,7 @@ class SlackSocketModeServer:
                         detected_tools.extend(tool_calls_detected)
                         # Update header based on cumulative tags
                         cumulative_tags = derive_cumulative_tags(detected_tools, audio_files, processed_image_urls, user_message=text, final_response=full_text)
-                        # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                        # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
                         tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(cumulative_tags)])
                         current_header_prefix = f"{tag_display}\n\n"
 
@@ -504,7 +537,7 @@ class SlackSocketModeServer:
 
                 # Compute header_prefix_final based on tools actually used (cumulative)
                 final_cumulative_tags = derive_cumulative_tags(tool_calls, audio_files, processed_image_urls, user_message=text, final_response=text_resp)
-                # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
 
@@ -551,7 +584,7 @@ class SlackSocketModeServer:
         image_urls: Optional[List[str]] = None, use_thread_history: bool = True, user_id: str = None
     ):
         """
-        Synchronous (non-streaming) response with spinner + header tag.
+        Synchronous (non-streaming) response with hourglass spinner + header tag.
         """
         global agent, agent_semaphore
         if not agent:
@@ -583,35 +616,38 @@ class SlackSocketModeServer:
 
         # --- Visual spinner logic ---
         async with agent_semaphore:
-            spinner_texts = ["🤔 Pensando.", "🤔 Pensando..", "🤔 Pensando..."]
+            spinner_texts = ["⏳ Pensando.", "⏳ Pensando..", "⏳ Pensando..."]
             spinner_idx = 0
             stop_event = asyncio.Event()
-            spinner_msg = await say(text="🤔 Pensando.", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            spinner_msg = await say(text="⏳ Pensando.", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             message_ts = spinner_msg.get("ts")
 
             async def spinner_task_func():
                 nonlocal spinner_idx
                 while not stop_event.is_set():
-                    spinner_idx = (spinner_idx + 1) % 3
                     try:
-                        await self.app.client.chat_update(
-                            channel=original_channel_id,
-                            ts=message_ts,
-                            text=spinner_texts[spinner_idx]
-                        )
-                    except Exception as update_error:
-                        logger.warning(f"Spinner update failed: {update_error}")
-                    try:
-                        await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+                        # Wait for 0.8 seconds or until stop event
+                        await asyncio.wait_for(stop_event.wait(), timeout=0.8)
+                        break  # Stop event was set, exit loop
                     except asyncio.TimeoutError:
-                        continue
+                        # Timeout reached, update spinner and continue
+                        spinner_idx = (spinner_idx + 1) % 3
+                        try:
+                            await self.app.client.chat_update(
+                                channel=original_channel_id,
+                                ts=message_ts,
+                                text=spinner_texts[spinner_idx]
+                            )
+                        except Exception as update_error:
+                            logger.warning(f"Spinner update failed: {update_error}")
+                            break  # Exit on update failure
 
             spinner_task = asyncio.create_task(spinner_task_func())
 
             # --- Cumulative Tag System for Non-Streaming ---
             def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
                 """Build cumulative tags for non-streaming responses."""
-                tags = ["gpt-4.1"]  # Always start with model
+                tags = ["gpt-4.1-mini"]  # Always start with model
 
                 # Add Vision if images are being processed
                 if image_urls:
@@ -667,36 +703,62 @@ class SlackSocketModeServer:
 
                 return tags
 
-            def derive_cumulative_tags_non_streaming_with_response(tool_calls, audio_files, image_urls, final_response=None):
+            def derive_cumulative_tags_non_streaming_with_response(tool_calls, audio_files, image_urls, final_response=None, user_message=None):
                 """Build cumulative tags for non-streaming responses with response analysis."""
                 tags = derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls)
 
-                # Enhanced detection: Check if MCP was used based on response content
-                if final_response:
-                    response_content = final_response.lower()
+                # Enhanced detection: Check if MCP was used based on response content and user message
+                if final_response or user_message:
+                    response_content = (final_response or "").lower()
+                    message_content = (user_message or "").lower()
+                    combined_content = response_content + " " + message_content
 
                     # Google Drive MCP indicators
-                    if any(indicator in response_content for indicator in ["google drive", "my drive", "drive.google.com", "arquivo encontrado", "pasta encontrada"]):
+                    drive_indicators = ["google drive", "my drive", "drive.google.com", "arquivo encontrado", "pasta encontrada", "gdrive", "livia.png", "id:", "drive da live"]
+                    if any(indicator in combined_content for indicator in drive_indicators):
                         if "McpGoogleDrive" not in tags:
                             tags.append("McpGoogleDrive")
 
-                    # Other MCP indicators
-                    if any(indicator in response_content for indicator in ["everhour", "tempo adicionado", "task ev:"]):
+                    # Everhour MCP indicators (specific keyword only)
+                    everhour_indicators = ["everhour", "tempo adicionado", "task ev:", "ev:"]
+                    if any(indicator in combined_content for indicator in everhour_indicators):
                         if "McpEverhour" not in tags:
                             tags.append("McpEverhour")
 
-                    if any(indicator in response_content for indicator in ["asana", "projeto", "workspace"]):
+                    # Asana MCP indicators (specific keyword only)
+                    asana_indicators = ["asana"]
+                    if any(indicator in combined_content for indicator in asana_indicators):
                         if "McpAsana" not in tags:
                             tags.append("McpAsana")
 
-                    if any(indicator in response_content for indicator in ["email", "gmail", "inbox", "remetente"]):
+                    # Gmail MCP indicators (specific keyword only)
+                    gmail_indicators = ["gmail"]
+                    if any(indicator in combined_content for indicator in gmail_indicators):
                         if "McpGmail" not in tags:
                             tags.append("McpGmail")
+
+                    # Google Docs MCP indicators
+                    docs_indicators = ["google docs", "documento", "docs", "live_codigodeeticaeconduta"]
+                    if any(indicator in combined_content for indicator in docs_indicators):
+                        if "McpGoogleDocs" not in tags:
+                            tags.append("McpGoogleDocs")
+
+                    # Google Calendar MCP indicators
+                    calendar_indicators = ["calendar", "calendario", "agenda", "evento", "reunião"]
+                    if any(indicator in combined_content for indicator in calendar_indicators):
+                        if "McpGoogleCalendar" not in tags:
+                            tags.append("McpGoogleCalendar")
+
+                    # Google Sheets MCP indicators
+                    sheets_indicators = ["sheets", "google sheets", "planilha", "spreadsheet"]
+                    if any(indicator in combined_content for indicator in sheets_indicators):
+                        if "McpGoogleSheets" not in tags:
+                            tags.append("McpGoogleSheets")
 
                 return tags
 
             def get_initial_tags_non_streaming():
-                initial_tags = ["gpt-4.1"]  # Always start with model
+                initial_tags = ["gpt-4.1-mini"]  # Always start with model
 
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -711,7 +773,7 @@ class SlackSocketModeServer:
                 return initial_tags
 
             initial_tags = get_initial_tags_non_streaming()
-            # Format as: `⛭ gpt-4.1` `Vision` etc.
+            # Format as: `⛭ gpt-4.1-mini` `Vision` etc.
             tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
             header_prefix = f"{tag_display}\n\n"
 
@@ -737,8 +799,8 @@ class SlackSocketModeServer:
 
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
-                final_cumulative_tags = derive_cumulative_tags_non_streaming_with_response(tool_calls, [], processed_image_urls, text_resp)
-                # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                final_cumulative_tags = derive_cumulative_tags_non_streaming_with_response(tool_calls, [], processed_image_urls, text_resp, text)
+                # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
 

@@ -87,13 +87,13 @@ async def create_agent() -> Agent:
     zapier_tools_description = (
         "⚡ **Zapier Integration Tools** (Remote MCP):\n"
         + "\n".join(zapier_descriptions) + "\n"
-        "**Como usar (keywords simplificadas):**\n"
-        "  - Para mcpAsana: use 'asana', 'projeto', 'task', 'tarefa'\n"
-        "  - Para mcpEverhour: use 'everhour', 'tempo', 'time', 'horas'\n"
-        "  - Para mcpGmail: use 'gmail', 'email'\n"
-        "  - Para mcpGoogleDocs: use 'docs', 'google docs', 'documento'\n"
-        "  - Para mcpGoogleSheets: use 'sheets', 'google sheets', 'planilha'\n"
-        "  - Para Google Drive: use 'drive', 'arquivo', 'pasta'\n"
+        "**Como usar (keywords específicas):**\n"
+        "  - Para mcpAsana: use 'asana'\n"
+        "  - Para mcpEverhour: use 'everhour'\n"
+        "  - Para mcpGmail: use 'gmail'\n"
+        "  - Para mcpGoogleDocs: use 'docs'\n"
+        "  - Para mcpGoogleSheets: use 'sheets'\n"
+        "  - Para Google Drive: use 'drive'\n"
         "  - Para mcpGoogleCalendar: use 'calendar'\n"
         "  - Para mcpSlack: use 'slack'\n"
         "**Dicas:**\n"
@@ -172,7 +172,7 @@ ELSE IF user asks about documents/files
 </response_guidelines>
 """
         ),
-        model="gpt-4.1",  # Changed to gpt-4o for better vision support
+        model="gpt-4.1-mini",  # Changed to gpt-4o for better vision support
         tools=[web_search_tool, file_search_tool],  # image_generation_tool temporariamente removida - erro tools[2].type
         mcp_servers=mcp_servers,
     )
@@ -233,10 +233,7 @@ async def process_message_with_structured_output(mcp_key: str, message: str, ima
     logger.info(f"Streaming: {use_streaming}")
 
     try:
-        # Get the Pydantic model for this operation
-        schema_model = get_schema_for_operation(schema_type)
-
-        # Create the API call with structured output
+        # Create the API call (structured outputs temporarily disabled due to API compatibility)
         api_params = {
             "model": "gpt-4o-2024-08-06",  # Required for Structured Outputs
             "input": input_data,
@@ -251,8 +248,8 @@ async def process_message_with_structured_output(mcp_key: str, message: str, ima
                         "Authorization": f"Bearer {mcp_config['api_key'].strip()}"
                     }
                 }
-            ],
-            "text_format": schema_model
+            ]
+            # Note: text_format parameter removed as it's not supported in Responses API
         }
 
         if use_streaming:
@@ -272,10 +269,7 @@ async def process_message_with_structured_output(mcp_key: str, message: str, ima
                         if delta_text:
                             full_response += delta_text
                     elif event.type == "response.completed":
-                        # Get the final structured output
-                        final_response = response.get_final_response()
-                        if hasattr(final_response, 'output_parsed'):
-                            structured_data = final_response.output_parsed.model_dump()
+                        # Structured output streaming completed
                         logger.info("Structured output streaming completed")
 
             return {
@@ -345,7 +339,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         # (code omitted, see above)
         if mcp_config["server_label"] == "zapier-mcpeverhour":
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency with Everhour MCP access.\n\n"
@@ -378,7 +372,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpgmail":
             # Special handling for Gmail with optimized search and content limiting
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Gmail tools to search and read emails.\n\n"
@@ -420,7 +414,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpasana":
             # Special handling for Asana operations
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access.\n\n"
@@ -450,7 +444,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpgooglecalendar":
             # Special handling for Google Calendar with consistent date parameters
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
@@ -486,7 +480,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpslack":
             # Special handling for Slack with message search and channel operations
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use slack_find_message with 'in:channel-name' format.\n"
@@ -510,7 +504,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         else:
             # Regular MCP processing for other services (Google Drive, etc.)
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access. Sequential search: workspace→project→task.\n"
@@ -604,7 +598,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
             try:
                 # Retry with more restrictive search and summarization (non-streaming fallback)
                 simplified_response = client.responses.create(
-                    model="gpt-4.1",
+                    model="gpt-4.1-mini",
                     input="Busque apenas o último email recebido na caixa de entrada e faça um resumo muito breve",
                     instructions=(
                         "You are Livia, AI assistant from ℓiⱴε agency. Search for the latest email in inbox using 'in:inbox' operator.\n"
