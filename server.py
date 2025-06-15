@@ -360,8 +360,11 @@ class SlackSocketModeServer:
                 # Process image URLs if any
                 processed_image_urls = []
                 if image_urls:
-                    logger.info(f"Processing {len(image_urls)} images...")
+                    logger.info(f"Processing {len(image_urls)} images: {image_urls}")
                     processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
+                    logger.info(f"Successfully processed {len(processed_image_urls)} images")
+                else:
+                    logger.info("No images detected in this message")
 
                 # Streaming callback to update Slack message
                 current_text_only = ""
@@ -609,8 +612,11 @@ class SlackSocketModeServer:
 
                 processed_image_urls = []
                 if image_urls:
-                    logger.info(f"Processing {len(image_urls)} images...")
+                    logger.info(f"Processing {len(image_urls)} images: {image_urls}")
                     processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
+                    logger.info(f"Successfully processed {len(processed_image_urls)} images")
+                else:
+                    logger.info("No images detected in this message")
 
                 response = await process_message(agent, context_input, processed_image_urls, None, use_structured_outputs)
                 stop_event.set()
@@ -1032,6 +1038,7 @@ class SlackSocketModeServer:
             if should_process:
                 image_urls = self._extract_image_urls(event)
                 audio_files = self._extract_audio_files(event)
+                logger.info(f"Extracted {len(image_urls)} image URLs and {len(audio_files)} audio files")
                 # Spawn processing as a background task to enable high concurrency
                 asyncio.create_task(
                     self._process_and_respond_streaming(
@@ -1095,6 +1102,7 @@ class SlackSocketModeServer:
             # Check for audio files even if no text
             image_urls = self._extract_image_urls(event)
             audio_files = self._extract_audio_files(event)
+            logger.info(f"App mention: Extracted {len(image_urls)} image URLs and {len(audio_files)} audio files")
 
             # If no text but has audio files, set a default message
             if not text and audio_files:

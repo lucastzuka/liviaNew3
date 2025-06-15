@@ -729,22 +729,28 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
     try:
         # Start tracing for the agent workflow
         with trace(workflow_name="Livia Slack Agent Workflow", trace_id=trace_id):
-            # Prepare input with images if provided
+            # Prepare input with images if provided (format for OpenAI Agents SDK)
             if image_urls:
+                # Create input with both text and images for vision processing
                 input_content = [
                     {"type": "input_text", "text": message}
                 ]
+
+                # Add each image to the input
                 for image_url in image_urls:
                     input_content.append({
                         "type": "input_image",
                         "image_url": image_url,
-                        "detail": "low"
+                        "detail": "low"  # Use low detail for cost efficiency
                     })
+
                 input_data = [{
                     "role": "user",
                     "content": input_content
                 }]
+                logger.info(f"Prepared vision input with {len(image_urls)} images")
             else:
+                # Text-only input
                 input_data = message
 
             result = Runner.run_streamed(starting_agent=agent, input=input_data)
