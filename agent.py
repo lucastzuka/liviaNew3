@@ -96,60 +96,54 @@ async def create_agent() -> Agent:
     agent = Agent(
         name="Livia",
         instructions=(
-            """You are Livia, an intelligent chatbot assistant for Slack and work at a Brazilian advertising agency called ℓiⱴε. You are an agent in a Slack chat room. You might receive messages from multiple people.
-Format bold text *like this*, italic text _like this_ and strikethrough text ~like this~.
-Slack user IDs match the regex `<@U.*?>`.
-Your Slack user ID is <@{U057233T98A}>.
-Each message has the author's Slack user ID prepended, like the regex `^<@U.*?>: ` followed by the message text."
-IMPORTANT: You should ONLY respond in threads where the bot was mentioned in the FIRST message of the thread.
+            """<identity>
+You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilian advertising agency. You operate in Slack channels and respond only in threads where you were mentioned in the first message.
+</identity>
 
-IMPORTANT: You should NOT mention File Search or the names of files unless the user explicitly asks about documents/files. Only use file_search when you believe the user's answer is in the uploaded documents or they request it directly.
+<communication_style>
+- BE EXTREMELY CONCISE AND BRIEF - this is your primary directive
+- Default to short, direct answers unless explicitly asked for details
+- One sentence responses are preferred for simple questions
+- Avoid unnecessary explanations, steps, or elaborations
+- Always respond in the same language the user communicates with you
+- Use Slack formatting: *bold*, _italic_, ~strikethrough~
+- Your Slack ID: <@U057233T98A>
+- Only mention File Search or file names when explicitly asked about documents
+- Feel free to disagree constructively to improve results
+</communication_style>
 
-IMPORTANT: It's OK to disagree with the user if it helps clarify or improve their result.
-
-You have access to multiple powerful tools:
-
-🔍 **Web Search Tool**: Search the internet for current information, news, facts, and answers
-📄 **File Search Tool**: Search through uploaded documents and files in your knowledge base for relevant information
-👁️ **Image Vision**: Analyze and describe images uploaded to Slack or provided via URLs
-🎨 **Image Generation Tool**: Generate high-quality images from text descriptions using gpt-image-1 model
+<available_tools>
+- Web Search Tool: Search internet for current information
+- File Search Tool: Search uploaded documents in knowledge base
+- Image Vision: Analyze uploaded images or URLs
+- Image Generation Tool: Create images using gpt-image-1 model
 """ + f"{zapier_tools_description}" + """
-**CRITICAL MCP USAGE INSTRUCTIONS:**
-1. **Sequential Search Strategy**: When MCPs require multiple fields (workspace → project → task), perform searches step-by-step:
-   - First: Search for workspace/organization
-   - Second: Use workspace result to search for project
-   - Third: Use project result to search for specific task
-   - Example: Find workspace 'INOVAÇÃO' → Find project 'Inovação' → Find task 'Terminar Livia 2.0'
-2. **ALWAYS CITE IDs/NUMBERS**: Include ALL IDs, codes, and numbers from MCP responses in your answers:
-   - Example: 'Found project Inovação (ev:273391483277215) with task Terminar Livia 2.0 (ev:273391484704922)'
-   - This enables future operations using these exact IDs
-3. **Use Exact IDs When Available**: If conversation history contains IDs, use them directly instead of searching by name
-4. **Multiple Tool Calls**: Don't hesitate to make multiple MCP calls to complete a task properly
+<mcp_usage_rules>
+1. Sequential Search Strategy: workspace → project → task
+2. Always include ALL IDs/numbers from API responses
+3. Use exact IDs when available in conversation history
+4. Make multiple MCP calls as needed to complete tasks
+5. Limit results to maximum 4 items per search
+</mcp_usage_rules>
 
-**Guidelines:**
-- Use web search when you need current information, recent news, or facts you don't know
-- Use file search when users ask about documents, files, or information from your knowledge base
-- When users upload images or send image URLs, analyze them and provide detailed descriptions
-- For images, describe what you see including objects, people, text, colors, and context
-- For Google Drive searches: try multiple search strategies if first attempt fails
-- When searching for folders/files, try partial names, different cases, and related terms
-- If a search returns no results, suggest alternative search terms or approaches
-- IMPORTANT: If user searches for 'TargetGroup', it's likely the file 'TargetGroupIndex_BR2024'
-- Consider that file names may have suffixes like _BR2024, _2024, etc.
-- Always offer to try broader or more specific search terms when initial search fails
-- When user says 'pasta' but means 'arquivo', correct and search for files instead
-- For document-related queries, try file search first before other tools
-- 🔄 **Smart Routing**: Requests are automatically routed to appropriate Zapier MCPs
-- 🎯 **Keyword Detection**: System detects intent and uses the right integration
-- 🚨 SECURITY: NEVER use slack_post_message - responses are handled automatically
-- 🚨 SECURITY: NEVER send messages to channels other than where you were mentioned
-- Be helpful, concise, and professional in your responses
-- Ask for clarification if needed
-- Always cite sources when providing information from web searches
-- You can help with general questions, provide information, and assist with Slack-related tasks
+<response_guidelines>
+- Use web search for current information and facts
+- Use file search when users ask about documents
+- Provide detailed image analysis when images are shared
+- Try multiple search strategies if initial attempts fail
+- Suggest alternative search terms when no results found
+- Handle 'TargetGroup' searches as 'TargetGroupIndex_BR2024'
+- Correct 'pasta' to 'arquivo' when appropriate
+- Cite sources for web searches
+- Mention document names for file searches
+- Be professional and helpful
+- Ask for clarification when needed
+- NEVER use slack_post_message - responses handled automatically
+- NEVER send messages to other channels
+</response_guidelines>
 """
         ),
-        model="gpt-4.1-mini",
+        model="gpt-4o-mini",
         tools=[web_search_tool, file_search_tool],  # image_generation_tool temporariamente removida - erro tools[2].type
         mcp_servers=mcp_servers,
     )
@@ -598,30 +592,61 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
                         logger.info("Agent streaming response completed")
                 elif event.type == "run_item_stream_event":
                     if event.item.type == "tool_call_item":
+                        # Debug: Log all available attributes
+                        logger.info(f"DEBUG: Tool call item attributes: {dir(event.item)}")
+
                         # Robust extraction of tool_name and tool_type
                         tool_name = getattr(event.item, 'name', '')
                         tool_type = ''
+
                         # Try extracting from .tool attribute if present
                         tool_obj = getattr(event.item, 'tool', None)
-                        if not tool_name and tool_obj:
-                            tool_name = getattr(tool_obj, 'name', '') or getattr(tool_obj, 'type', '')
+                        if tool_obj:
+                            logger.info(f"DEBUG: Tool object attributes: {dir(tool_obj)}")
+                            if not tool_name:
+                                tool_name = getattr(tool_obj, 'name', '') or getattr(tool_obj, 'type', '')
+
                         # Try .tool_name attribute
                         if not tool_name:
                             tool_name = getattr(event.item, 'tool_name', '')
+
                         # Try .tool_type attribute (if present)
                         if not tool_type and hasattr(event.item, 'tool_type'):
                             tool_type = getattr(event.item, 'tool_type', '')
+
+                        # Try function/call attributes
+                        if not tool_name:
+                            tool_name = getattr(event.item, 'function', {}).get('name', '') if hasattr(event.item, 'function') else ''
+
+                        # Try call_id or id attributes
+                        if not tool_name:
+                            call_id = getattr(event.item, 'call_id', '') or getattr(event.item, 'id', '')
+                            if 'web_search' in call_id.lower():
+                                tool_name = 'web_search'
+                            elif 'file_search' in call_id.lower():
+                                tool_name = 'file_search'
+
                         # Try raw_json if still missing
                         if (not tool_name or not tool_type) and hasattr(event.item, 'raw_json'):
                             try:
                                 raw_json = getattr(event.item, 'raw_json', {})
+                                logger.info(f"DEBUG: Raw JSON: {raw_json}")
                                 if isinstance(raw_json, dict):
                                     if not tool_name:
                                         tool_name = raw_json.get("name", raw_json.get("tool_name", ""))
                                     if not tool_type:
                                         tool_type = raw_json.get("type", raw_json.get("tool_type", ""))
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(f"DEBUG: Error parsing raw_json: {e}")
+
+                        # Fallback: Assume web_search if web search patterns detected
+                        if not tool_name:
+                            web_keywords = ["pesquisa", "pesquise", "search", "google", "busca", "procura", "internet", "net"]
+                            if any(keyword in message.lower() for keyword in web_keywords):
+                                tool_name = "web_search"
+                                logger.info("DEBUG: Fallback detection - assuming web_search based on web search request")
+                            else:
+                                logger.info("DEBUG: No tool detected, will use model name as tag")
                         tool_call_info = {
                             "type": getattr(event.item, 'type', ''),
                             "tool_name": tool_name or '',
@@ -639,6 +664,9 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
                             tool_call_info["file_names"] = file_names if file_names else []
                         tool_calls_made.append(tool_call_info)
                         logger.info(f"-- Tool was called during streaming: {tool_call_info}")
+                        # Notify stream callback about tool detection
+                        if stream_callback:
+                            await stream_callback("", full_response, tool_calls_detected=[tool_call_info])
                     elif event.item.type == "tool_call_output_item":
                         logger.info(f"-- Tool output during streaming: {event.item.output}")
                     elif event.item.type == "message_output_item":

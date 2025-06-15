@@ -234,22 +234,22 @@ class SlackSocketModeServer:
 
         # --- Visual spinner logic ---
         async with agent_semaphore:
-            spinner_symbols = ["𖧹", "๏"]
+            spinner_texts = ["🤔 Pensando.", "🤔 Pensando..", "🤔 Pensando..."]
             spinner_idx = 0
             stop_event = asyncio.Event()
-            spinner_msg = await say(text="𖧹", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            spinner_msg = await say(text="🤔 Pensando.", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             message_ts = spinner_msg.get("ts")
 
             async def spinner_task_func():
                 nonlocal spinner_idx
-                # Spinner loop: alternate symbol every second using chat_update
+                # Spinner loop: cycle through thinking dots every second using chat_update
                 while not stop_event.is_set():
-                    spinner_idx = (spinner_idx + 1) % 2
+                    spinner_idx = (spinner_idx + 1) % 3
                     try:
                         await self.app.client.chat_update(
                             channel=original_channel_id,
                             ts=message_ts,
-                            text=spinner_symbols[spinner_idx]
+                            text=spinner_texts[spinner_idx]
                         )
                     except Exception as update_error:
                         logger.warning(f"Spinner update failed: {update_error}")
@@ -262,7 +262,8 @@ class SlackSocketModeServer:
 
             # --- Tag derivation utility ---
             def derive_tag(tool_calls, audio_files, user_message=None, final_response=None):
-                # Priority: AudioTranscribe > ImageGen > WebSearch > FileSearch > Vision > ChatAgent
+                # Priority: AudioTranscribe > ImageGen > WebSearch > Vision > MCPs > Model Name
+                # Note: FileSearch is always active (RAG), so we don't show it as a tag
                 if audio_files:
                     return "AudioTranscribe"
                 if tool_calls:
@@ -270,27 +271,43 @@ class SlackSocketModeServer:
                         # Try both tool_name and tool_type (lowercase)
                         name = (call.get("tool_name", "") or call.get("name", "")).lower()
                         tool_type = call.get("tool_type", "").lower()
-                        # Map any call with "web_search" in tool_name or tool_type
+
+                        # Web Search detection
                         if "web_search" in name or "web_search" in tool_type:
                             return "WebSearch"
-                        # Special: file_search with file_names
-                        if name == "file_search" or tool_type == "file_search":
-                            file_names = call.get("file_names")
-                            if file_names and isinstance(file_names, list) and len(file_names) > 0:
-                                return file_names[0]
-                            return "FileSearch"
+
+                        # Image Generation detection
                         elif name == "image_generation_tool" or tool_type == "image_generation_tool":
                             return "ImageGen"
+
+                        # Image Vision detection
                         elif name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
                             return "Vision"
-                # Fallback: If no tool_call, but looks like a web search from content
+
+                        # MCP detection (future: McpEverhour, McpAsana, etc.)
+                        elif "mcp" in name or "mcp" in tool_type:
+                            # Extract MCP service name
+                            if "everhour" in name or "everhour" in tool_type:
+                                return "McpEverhour"
+                            elif "asana" in name or "asana" in tool_type:
+                                return "McpAsana"
+                            elif "gmail" in name or "gmail" in tool_type:
+                                return "McpGmail"
+                            # Add more MCPs as needed
+
+                        # Skip file_search - it's always active (RAG)
+                        # We don't show FileSearch tag since it's background functionality
+
+                # Fallback: Check if response contains web sources (but only if explicitly requested)
                 if final_response and user_message:
                     import re
                     if re.search(r"https?://", final_response):
-                        user_tokens = ["pesquise", "pesquisa", "search", "google", "net"]
-                        if any(token in user_message.lower() for token in user_tokens):
+                        web_keywords = ["pesquisa na net", "search", "google", "busca na internet", "procura na web"]
+                        if any(keyword in user_message.lower() for keyword in web_keywords):
                             return "WebSearch"
-                return "ChatAgent"
+
+                # When no specific tools are used, show model name
+                return "gpt-4o-mini"
 
             # --- Determine initial response tag (heuristic) ---
             def get_response_tag():
@@ -304,10 +321,10 @@ class SlackSocketModeServer:
                     return "AudioTranscribe"
                 if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
                     return "Vision"
-                return "ChatAgent"
+                return "gpt-4o-mini"
 
             tag = get_response_tag()
-            header_prefix = f"⛭ {tag}\n\n"  # No backticks
+            header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
 
             try:
                 logger.info(
@@ -334,13 +351,23 @@ class SlackSocketModeServer:
                 current_text_only = ""
                 sent_header = False
                 last_update_length = 0
+                detected_tools = []
+                current_header_prefix = header_prefix
                 import time
                 last_update_time = time.time()
 
-                async def stream_callback(delta_text: str, full_text: str):
-                    nonlocal current_text_only, last_update_length, last_update_time, sent_header
+                async def stream_callback(delta_text: str, full_text: str, tool_calls_detected=None):
+                    nonlocal current_text_only, last_update_length, last_update_time, sent_header, detected_tools, current_header_prefix
                     current_text_only = full_text
                     current_time = time.time()
+
+                    # Update detected tools if provided
+                    if tool_calls_detected:
+                        detected_tools.extend(tool_calls_detected)
+                        # Update header based on detected tools
+                        new_tag = derive_tag(detected_tools, audio_files, user_message=text, final_response=full_text)
+                        current_header_prefix = f"`⛭ {new_tag}`\n\n"
+
                     should_update = (
                         len(current_text_only) - last_update_length >= 10 or
                         current_time - last_update_time >= 0.5 or
@@ -358,7 +385,7 @@ class SlackSocketModeServer:
                             await self.app.client.chat_update(
                                 channel=original_channel_id,
                                 ts=message_ts,
-                                text=header_prefix  # Only header, body comes after
+                                text=current_header_prefix
                             )
                         except Exception as e:
                             logger.warning(f"Failed to set header before streaming: {e}")
@@ -368,7 +395,7 @@ class SlackSocketModeServer:
 
                     if should_update and current_text_only:
                         try:
-                            formatted_text = header_prefix + format_message_for_slack(current_text_only)
+                            formatted_text = current_header_prefix + format_message_for_slack(current_text_only)
                             await self.app.client.chat_update(
                                 channel=original_channel_id,
                                 ts=message_ts,
@@ -402,7 +429,7 @@ class SlackSocketModeServer:
 
                 # Compute header_prefix_final based on tools actually used
                 tag_final = derive_tag(tool_calls, audio_files, user_message=text, final_response=text_resp)
-                header_prefix_final = f"⛭ {tag_final}\n\n"
+                header_prefix_final = f"`⛭ {tag_final}`\n\n"
 
                 try:
                     formatted_response = header_prefix_final + format_message_for_slack(text_resp)
@@ -479,21 +506,21 @@ class SlackSocketModeServer:
 
         # --- Visual spinner logic ---
         async with agent_semaphore:
-            spinner_symbols = ["𖧹", "๏"]
+            spinner_texts = ["🤔 Pensando.", "🤔 Pensando..", "🤔 Pensando..."]
             spinner_idx = 0
             stop_event = asyncio.Event()
-            spinner_msg = await say(text="𖧹", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            spinner_msg = await say(text="🤔 Pensando.", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             message_ts = spinner_msg.get("ts")
 
             async def spinner_task_func():
                 nonlocal spinner_idx
                 while not stop_event.is_set():
-                    spinner_idx = (spinner_idx + 1) % 2
+                    spinner_idx = (spinner_idx + 1) % 3
                     try:
                         await self.app.client.chat_update(
                             channel=original_channel_id,
                             ts=message_ts,
-                            text=spinner_symbols[spinner_idx]
+                            text=spinner_texts[spinner_idx]
                         )
                     except Exception as update_error:
                         logger.warning(f"Spinner update failed: {update_error}")
@@ -506,23 +533,43 @@ class SlackSocketModeServer:
 
             # --- Tag derivation utility ---
             def derive_tag(tool_calls, audio_files):
+                # Priority: AudioTranscribe > ImageGen > WebSearch > Vision > MCPs > Model Name
+                # Note: FileSearch is always active (RAG), so we don't show it as a tag
                 if audio_files:
                     return "AudioTranscribe"
                 if tool_calls:
                     for call in tool_calls:
                         name = call.get("tool_name", call.get("name", "")).lower()
-                        if name == "file_search":
-                            file_names = call.get("file_names")
-                            if file_names and isinstance(file_names, list) and len(file_names) > 0:
-                                return file_names[0]
-                            return "FileSearch"
-                        elif name == "web_search":
+                        tool_type = call.get("tool_type", "").lower()
+
+                        # Web Search detection
+                        if "web_search" in name or "web_search" in tool_type:
                             return "WebSearch"
-                        elif name == "image_generation_tool":
+
+                        # Image Generation detection
+                        elif name == "image_generation_tool" or tool_type == "image_generation_tool":
                             return "ImageGen"
-                        elif name in {"image_vision", "image_vision_tool"}:
+
+                        # Image Vision detection
+                        elif name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
                             return "Vision"
-                return "ChatAgent"
+
+                        # MCP detection (future: McpEverhour, McpAsana, etc.)
+                        elif "mcp" in name or "mcp" in tool_type:
+                            # Extract MCP service name
+                            if "everhour" in name or "everhour" in tool_type:
+                                return "McpEverhour"
+                            elif "asana" in name or "asana" in tool_type:
+                                return "McpAsana"
+                            elif "gmail" in name or "gmail" in tool_type:
+                                return "McpGmail"
+                            # Add more MCPs as needed
+
+                        # Skip file_search - it's always active (RAG)
+                        # We don't show FileSearch tag since it's background functionality
+
+                # When no specific tools are used, show model name
+                return "gpt-4o-mini"
 
             def get_response_tag():
                 image_generation_keywords = [
@@ -533,10 +580,10 @@ class SlackSocketModeServer:
                     return "ImageGen"
                 if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
                     return "Vision"
-                return "ChatAgent"
+                return "gpt-4o-mini"
 
             tag = get_response_tag()
-            header_prefix = f"⛭ {tag}\n\n"  # No backticks
+            header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
 
             try:
                 logger.info(
@@ -558,7 +605,7 @@ class SlackSocketModeServer:
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
                 tag_final = derive_tag(tool_calls, [])
-                header_prefix_final = f"⛭ {tag_final}\n\n"
+                header_prefix_final = f"`⛭ {tag_final}`\n\n"
 
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {text_resp}")
