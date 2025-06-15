@@ -11,8 +11,8 @@ from typing import Optional, Tuple
 ZAPIER_MCPS = {
     "google_drive": {
         "name": "Zapier Google Drive MCP",
-        "url": "https://mcp.zapier.com/api/mcp/s/196901ca-f828-4a37-ba99-383e7a618534/mcp",
-        "api_key": "sk-or-v1-867dc3af2aa345f0b87261f08060faa2",
+        "url": "https://mcp.zapier.com/api/mcp/s/0a4332e0-3e88-41cc-b7fd-109d16aef26b/mcp",
+        "api_key": "MGE0MzMyZTAtM2U4OC00MWNjLWI3ZmQtMTA5ZDE2YWVmMjZiOjBjODA0ZTZjLTgyNzUtNGEzNC1hNWQ4LTdjNjI2ZTY3YjkwZQ==",
         "server_label": "zapier-gdrive",
         "keywords": ["google drive", "drive", "gdrive"],
         "priority": 1,

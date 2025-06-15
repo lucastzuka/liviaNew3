@@ -312,6 +312,21 @@ class SlackSocketModeServer:
                             elif "gmail" in name or "gmail" in tool_type:
                                 if "McpGmail" not in tags:
                                     tags.append("McpGmail")
+                            elif "google" in name or "drive" in name or "gdrive" in name:
+                                if "McpGoogleDrive" not in tags:
+                                    tags.append("McpGoogleDrive")
+                            elif "calendar" in name:
+                                if "McpGoogleCalendar" not in tags:
+                                    tags.append("McpGoogleCalendar")
+                            elif "docs" in name:
+                                if "McpGoogleDocs" not in tags:
+                                    tags.append("McpGoogleDocs")
+                            elif "sheets" in name:
+                                if "McpGoogleSheets" not in tags:
+                                    tags.append("McpGoogleSheets")
+                            elif "slack" in name:
+                                if "McpSlack" not in tags:
+                                    tags.append("McpSlack")
 
                         # Skip file_search - it's always active (RAG)
                         # We don't show FileSearch tag since it's background functionality
@@ -332,6 +347,28 @@ class SlackSocketModeServer:
 
                     if has_urls or has_web_indicators:
                         tags.append("WebSearch")
+
+                # Enhanced detection: Check if MCP was used based on response content
+                if final_response:
+                    response_content = final_response.lower()
+
+                    # Google Drive MCP indicators
+                    if any(indicator in response_content for indicator in ["google drive", "my drive", "drive.google.com", "arquivo encontrado", "pasta encontrada"]):
+                        if "McpGoogleDrive" not in tags:
+                            tags.append("McpGoogleDrive")
+
+                    # Other MCP indicators
+                    if any(indicator in response_content for indicator in ["everhour", "tempo adicionado", "task ev:"]):
+                        if "McpEverhour" not in tags:
+                            tags.append("McpEverhour")
+
+                    if any(indicator in response_content for indicator in ["asana", "projeto", "workspace"]):
+                        if "McpAsana" not in tags:
+                            tags.append("McpAsana")
+
+                    if any(indicator in response_content for indicator in ["email", "gmail", "inbox", "remetente"]):
+                        if "McpGmail" not in tags:
+                            tags.append("McpGmail")
 
                 return tags
 
@@ -612,6 +649,49 @@ class SlackSocketModeServer:
                             elif "gmail" in name or "gmail" in tool_type:
                                 if "McpGmail" not in tags:
                                     tags.append("McpGmail")
+                            elif "google" in name or "drive" in name or "gdrive" in name:
+                                if "McpGoogleDrive" not in tags:
+                                    tags.append("McpGoogleDrive")
+                            elif "calendar" in name:
+                                if "McpGoogleCalendar" not in tags:
+                                    tags.append("McpGoogleCalendar")
+                            elif "docs" in name:
+                                if "McpGoogleDocs" not in tags:
+                                    tags.append("McpGoogleDocs")
+                            elif "sheets" in name:
+                                if "McpGoogleSheets" not in tags:
+                                    tags.append("McpGoogleSheets")
+                            elif "slack" in name:
+                                if "McpSlack" not in tags:
+                                    tags.append("McpSlack")
+
+                return tags
+
+            def derive_cumulative_tags_non_streaming_with_response(tool_calls, audio_files, image_urls, final_response=None):
+                """Build cumulative tags for non-streaming responses with response analysis."""
+                tags = derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls)
+
+                # Enhanced detection: Check if MCP was used based on response content
+                if final_response:
+                    response_content = final_response.lower()
+
+                    # Google Drive MCP indicators
+                    if any(indicator in response_content for indicator in ["google drive", "my drive", "drive.google.com", "arquivo encontrado", "pasta encontrada"]):
+                        if "McpGoogleDrive" not in tags:
+                            tags.append("McpGoogleDrive")
+
+                    # Other MCP indicators
+                    if any(indicator in response_content for indicator in ["everhour", "tempo adicionado", "task ev:"]):
+                        if "McpEverhour" not in tags:
+                            tags.append("McpEverhour")
+
+                    if any(indicator in response_content for indicator in ["asana", "projeto", "workspace"]):
+                        if "McpAsana" not in tags:
+                            tags.append("McpAsana")
+
+                    if any(indicator in response_content for indicator in ["email", "gmail", "inbox", "remetente"]):
+                        if "McpGmail" not in tags:
+                            tags.append("McpGmail")
 
                 return tags
 
@@ -657,7 +737,7 @@ class SlackSocketModeServer:
 
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
-                final_cumulative_tags = derive_cumulative_tags_non_streaming(tool_calls, [], processed_image_urls)
+                final_cumulative_tags = derive_cumulative_tags_non_streaming_with_response(tool_calls, [], processed_image_urls, text_resp)
                 # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
