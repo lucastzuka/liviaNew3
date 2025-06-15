@@ -5,16 +5,27 @@ Livia - Slack Chatbot Agent Definition
 Defines Livia, an intelligent chatbot agent for Slack using OpenAI Agents SDK and API Responses.
 Responds only in threads that mention the bot in the first message.
 Includes tools: file_search, web_search, image vision, and MCP tools.
+Enhanced with Structured Outputs for reliable JSON schema adherence.
 """
 
 import os
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 # OpenAI Agents SDK components
 from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers, FileSearchTool, ImageGenerationTool
+
+# Import structured schemas for OpenAI Structured Outputs
+from tools.structured_schemas import (
+    LiviaResponse, ResponseMetadata, ToolUsage,
+    EverhourTimeEntry, AsanaTaskOperation, GmailOperation,
+    WebSearchResult, FileSearchResult, ImageAnalysis,
+    ImageGeneration, AudioTranscription,
+    get_schema_for_operation, create_response_schema
+)
 
 # Load environment variables from .env file
 env_path = Path('.') / '.env'
@@ -143,7 +154,7 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 </response_guidelines>
 """
         ),
-        model="gpt-4o-mini",
+        model="gpt-4.1",
         tools=[web_search_tool, file_search_tool],  # image_generation_tool temporariamente removida - erro tools[2].type
         mcp_servers=mcp_servers,
     )
@@ -153,6 +164,129 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 
 
 import re
+
+async def process_message_with_structured_output(mcp_key: str, message: str, image_urls: Optional[List[str]] = None, use_streaming: bool = True) -> dict:
+    """
+    Process message using OpenAI Responses API with Structured Outputs for reliable JSON schema adherence.
+
+    Args:
+        mcp_key: Key for the Zapier MCP to use
+        message: User message to process
+        image_urls: Optional list of image URLs
+        use_streaming: Whether to use streaming (default: True)
+
+    Returns:
+        Dict: {"text": ..., "structured_data": {...}, "tools": [...]}
+    """
+    from openai import OpenAI
+
+    if mcp_key not in ZAPIER_MCPS:
+        raise ValueError(f"Unknown MCP key: {mcp_key}. Available: {list(ZAPIER_MCPS.keys())}")
+
+    mcp_config = ZAPIER_MCPS[mcp_key]
+    client = OpenAI()
+
+    # Get appropriate schema for this MCP operation
+    schema_type = {
+        "mcpEverhour": "everhour",
+        "mcpAsana": "asana",
+        "mcpGmail": "gmail",
+        "mcpGoogleDocs": "file_search",
+        "mcpGoogleSheets": "file_search",
+        "mcpGoogleCalendar": "gmail",  # Similar structure
+        "mcpSlack": "gmail"  # Similar structure
+    }.get(mcp_key, "unified")
+
+    # Prepare input data with optional images
+    if image_urls:
+        input_content = [{"type": "input_text", "text": message}]
+        for image_url in image_urls:
+            input_content.append({
+                "type": "input_image",
+                "image_url": image_url,
+                "detail": "low"
+            })
+        input_data = input_content
+    else:
+        input_data = message
+
+    logger.info(f"Processing message with {mcp_config['name']} using Structured Outputs")
+    logger.info(f"Schema type: {schema_type}")
+    logger.info(f"Streaming: {use_streaming}")
+
+    try:
+        # Get the Pydantic model for this operation
+        schema_model = get_schema_for_operation(schema_type)
+
+        # Create the API call with structured output
+        api_params = {
+            "model": "gpt-4o-2024-08-06",  # Required for Structured Outputs
+            "input": input_data,
+            "instructions": f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access. Provide structured responses following the schema.",
+            "tools": [
+                {
+                    "type": "mcp",
+                    "server_label": mcp_config["server_label"],
+                    "server_url": mcp_config["url"],
+                    "require_approval": "never",
+                    "headers": {
+                        "Authorization": f"Bearer {mcp_config['api_key'].strip()}"
+                    }
+                }
+            ],
+            "text_format": schema_model
+        }
+
+        if use_streaming:
+            api_params["stream"] = True
+
+        response = client.responses.create(**api_params)
+
+        if use_streaming:
+            # Handle streaming response
+            full_response = ""
+            structured_data = None
+
+            for event in response:
+                if hasattr(event, 'type'):
+                    if event.type == "response.output_text.delta":
+                        delta_text = getattr(event, 'delta', '')
+                        if delta_text:
+                            full_response += delta_text
+                    elif event.type == "response.completed":
+                        # Get the final structured output
+                        final_response = response.get_final_response()
+                        if hasattr(final_response, 'output_parsed'):
+                            structured_data = final_response.output_parsed.model_dump()
+                        logger.info("Structured output streaming completed")
+
+            return {
+                "text": full_response or "No response generated.",
+                "structured_data": structured_data,
+                "tools": []
+            }
+        else:
+            # Handle non-streaming response
+            if hasattr(response, 'output_parsed'):
+                structured_data = response.output_parsed.model_dump()
+                response_text = structured_data.get('response_text', response.output_text or "No response generated.")
+            else:
+                structured_data = None
+                response_text = response.output_text or "No response generated."
+
+            return {
+                "text": response_text,
+                "structured_data": structured_data,
+                "tools": []
+            }
+
+    except Exception as e:
+        logger.error(f"Error with structured output for {mcp_config['name']}: {e}")
+        # Fallback to regular processing
+        logger.info("Falling back to regular MCP processing")
+        return await process_message_with_zapier_mcp_streaming(mcp_key, message, image_urls, None)
+
+
 async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> dict:
     """
     Generic function to process message using OpenAI Responses API with any Zapier Remote MCP with streaming support.
@@ -193,7 +327,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         # (code omitted, see above)
         if mcp_config["server_label"] == "zapier-mcpeverhour":
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency with Everhour MCP access.\n\n"
@@ -226,7 +360,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpgmail":
             # Special handling for Gmail with optimized search and content limiting
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Gmail tools to search and read emails.\n\n"
@@ -268,7 +402,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpasana":
             # Special handling for Asana operations
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access.\n\n"
@@ -298,7 +432,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpgooglecalendar":
             # Special handling for Google Calendar with consistent date parameters
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
@@ -334,7 +468,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpslack":
             # Special handling for Slack with message search and channel operations
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use slack_find_message with 'in:channel-name' format.\n"
@@ -358,7 +492,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         else:
             # Regular MCP processing for other services (Google Drive, etc.)
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access. Sequential search: workspace→project→task.\n"
@@ -452,7 +586,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
             try:
                 # Retry with more restrictive search and summarization (non-streaming fallback)
                 simplified_response = client.responses.create(
-                    model="gpt-4.1-mini",
+                    model="gpt-4.1",
                     input="Busque apenas o último email recebido na caixa de entrada e faça um resumo muito breve",
                     instructions=(
                         "You are Livia, AI assistant from ℓiⱴε agency. Search for the latest email in inbox using 'in:inbox' operator.\n"
@@ -530,15 +664,36 @@ def get_available_zapier_mcps() -> dict:
     }
 
 import re
-async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> dict:
-    """Runs the agent with the given message and optional image URLs with streaming support, returns dict with 'text' and 'tools'."""
+async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None, stream_callback=None, use_structured_outputs: bool = False) -> dict:
+    """
+    Runs the agent with the given message and optional image URLs with streaming support.
+
+    Args:
+        agent: OpenAI Agent instance
+        message: User message to process
+        image_urls: Optional list of image URLs
+        stream_callback: Optional callback for streaming updates
+        use_structured_outputs: Whether to use OpenAI Structured Outputs for MCPs (default: False)
+
+    Returns:
+        Dict with 'text', 'tools', and optionally 'structured_data'
+    """
 
     # 🔍 Check if message needs a specific Zapier MCP
     mcp_needed = detect_zapier_mcp_needed(message)
 
     if mcp_needed:
         mcp_name = ZAPIER_MCPS[mcp_needed]["name"]
-        logger.info(f"Message requires {mcp_name}, routing to Zapier Remote MCP with streaming")
+        logger.info(f"Message requires {mcp_name}, routing to Zapier Remote MCP")
+
+        if use_structured_outputs:
+            logger.info("Using Structured Outputs for reliable schema adherence")
+            try:
+                return await process_message_with_structured_output(mcp_needed, message, image_urls, use_streaming=True)
+            except Exception as e:
+                logger.warning(f"{mcp_name} with Structured Outputs failed, falling back to regular MCP: {e}")
+                # Fall through to regular MCP processing
+
         try:
             return await process_message_with_zapier_mcp_streaming(mcp_needed, message, image_urls, stream_callback)
         except Exception as e:

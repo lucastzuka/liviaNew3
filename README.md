@@ -32,7 +32,8 @@
 ### 🏗️ **Arquitetura Avançada**
 - **🚀 OpenAI Agents SDK**: Tecnologia de agentes mais recente da OpenAI
 - **🔄 OpenAI Responses API**: Pode ser usado para MCPs remotos com streaming
-- **🏗️ Arquitetura Híbrida**: Combina Agents SDK + Responses API.
+- **📋 Structured Outputs**: Garantia de aderência a schemas JSON com validação automática
+- **🏗️ Arquitetura Híbrida**: Combina Agents SDK + Responses API + Structured Outputs
 - **🔧 Sistema Modular**: Organizado e facilmente extensíveis.
 
 ## Limite de Concorrência (Atendimentos Simultâneos)
@@ -48,8 +49,32 @@ Livia suporta atendimento simultâneo de múltiplos usuários/requisições, lim
 
 Esse mecanismo garante escalabilidade sem risco de respostas misturadas ou sobrecarga de custos/rate limits.
 
+## 📋 Structured Outputs (Opcional)
+
+Livia suporta **OpenAI Structured Outputs** para garantir que as respostas sigam schemas JSON específicos, eliminando a necessidade de validação manual e reduzindo erros de formato.
+
+### ✨ **Benefícios**
+- **🔒 Confiabilidade**: Garantia de que respostas seguem estruturas específicas
+- **✅ Validação Automática**: Elimina necessidade de validação manual de JSON
+- **📊 Consistência**: Respostas padronizadas para diferentes tipos de operações
+- **🐛 Debugging**: Melhor rastreamento de erros estruturais
+
+### ⚙️ **Configuração**
+```bash
+# No arquivo .env
+LIVIA_USE_STRUCTURED_OUTPUTS=true
+```
+
+### 🎯 **Casos de Uso**
+- **Everhour**: Estrutura de time tracking com validação de IDs e formatos
+- **Asana**: Operações de projeto/tarefa com metadados estruturados
+- **Gmail**: Resultados de busca e operações de email organizados
+- **Web Search**: Resultados de busca com citações e resumos estruturados
+- **File Search**: Metadados de arquivos e citações organizadas
+
+**Nota**: Requer modelos `gpt-4o-2024-08-06` ou posteriores.
+
 ## 🚀 Configuração e Instalação
-**🎯 Descoberta Importante**: Os agentes e MCPs funcionam muito bem com **JSON Mode** para respostas estruturadas!
 
 ## 🚀 Inicialização e Execução
 

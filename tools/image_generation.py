@@ -24,7 +24,7 @@ class ImageGenerationTool:
     
     def __init__(self):
         """Initialize the image generation tool."""
-        self.model = "gpt-4.1-mini"  # Model that supports image generation tool
+        self.model = "gpt-image-1"  # Model that supports image generation tool
         self.supported_formats = ["png", "jpeg", "webp"]
         self.supported_sizes = ["1024x1024", "1536x1024", "1024x1536", "auto"]
         self.supported_qualities = ["low", "medium", "high", "auto"]

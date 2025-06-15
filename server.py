@@ -51,6 +51,10 @@ agent_semaphore = asyncio.Semaphore(max_concurrency)
 processed_messages = set()  # Cache de mensagens processadas
 bot_user_id = "U057233T98A"  # ID do bot no Slack - IMPORTANTE para detectar menções
 
+# Structured Outputs configuration
+use_structured_outputs = os.environ.get("LIVIA_USE_STRUCTURED_OUTPUTS", "false").lower() == "true"
+logger.info(f"Structured Outputs enabled: {use_structured_outputs}")
+
 # DEVELOPMENT SECURITY: Whitelist of allowed channels and users
 ALLOWED_CHANNELS = {"C059NNLU3E1"}  # Only this specific channel
 ALLOWED_USERS = {"U046LTU4TT5"}     # Only this specific user for DMs
@@ -307,7 +311,7 @@ class SlackSocketModeServer:
                             return "WebSearch"
 
                 # When no specific tools are used, show model name
-                return "gpt-4o-mini"
+                return "gpt-4.1"
 
             # --- Determine initial response tag (heuristic) ---
             def get_response_tag():
@@ -406,10 +410,11 @@ class SlackSocketModeServer:
                         except Exception as update_error:
                             logger.warning(f"Failed to update streaming message: {update_error}")
 
-                # Agent streaming: now expects dict: { text, tools }
-                response = await process_message(agent, context_input, processed_image_urls, stream_callback)
+                # Agent streaming: now expects dict: { text, tools, structured_data? }
+                response = await process_message(agent, context_input, processed_image_urls, stream_callback, use_structured_outputs)
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
+                structured_data = response.get("structured_data") if isinstance(response, dict) else None
                 # Final update with complete response
                 if not sent_header:
                     # If for some reason we never got a chunk, stop spinner and show header
@@ -569,7 +574,7 @@ class SlackSocketModeServer:
                         # We don't show FileSearch tag since it's background functionality
 
                 # When no specific tools are used, show model name
-                return "gpt-4o-mini"
+                return "gpt-4.1"
 
             def get_response_tag():
                 image_generation_keywords = [
@@ -580,7 +585,7 @@ class SlackSocketModeServer:
                     return "ImageGen"
                 if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
                     return "Vision"
-                return "gpt-4o-mini"
+                return "gpt-4.1"
 
             tag = get_response_tag()
             header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
@@ -595,7 +600,7 @@ class SlackSocketModeServer:
                     logger.info(f"Processing {len(image_urls)} images...")
                     processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
 
-                response = await process_message(agent, context_input, processed_image_urls)
+                response = await process_message(agent, context_input, processed_image_urls, None, use_structured_outputs)
                 stop_event.set()
                 try:
                     await spinner_task
