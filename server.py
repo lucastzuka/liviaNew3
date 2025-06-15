@@ -394,7 +394,7 @@ class SlackSocketModeServer:
                 )
 
                 # If image generation, call handler (it does its own spinner/updating)
-                if tag == "ImageGen":
+                if "ImageGen" in initial_tags:
                     stop_event.set()
                     try:
                         await spinner_task
