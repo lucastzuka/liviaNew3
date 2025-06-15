@@ -42,7 +42,7 @@ agent = None  # Agente OpenAI principal
 import math
 try:
     max_concurrency = int(os.environ.get("LIVIA_MAX_CONCURRENCY", "5"))
-    if max_concurrency &lt; 1:
+    if max_concurrency < 1:
         raise ValueError
 except Exception:
     logger.warning("Invalid LIVIA_MAX_CONCURRENCY, falling back to 5")
@@ -234,7 +234,7 @@ class SlackSocketModeServer:
 
         # --- Visual spinner logic ---
         async with agent_semaphore:
-            spinner_symbols = ["𖧹", "๏"]
+            spinner_symbols = ["`𖧹`", "`๏`"]
             spinner_idx = 0
             stop_event = asyncio.Event()
             spinner_msg = await say(text="𖧹", channel=original_channel_id, thread_ts=thread_ts_for_reply)
@@ -279,7 +279,7 @@ class SlackSocketModeServer:
                 return "ChatAgent"
 
             tag = get_response_tag()
-            header_prefix = f"⛭ {tag}\n\n"  # Space after icon, no backticks
+            header_prefix = f"`⛭ {tag}`\n\n"  # Space after icon, no backticks
 
             try:
                 logger.info(

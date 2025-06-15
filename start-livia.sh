@@ -20,7 +20,7 @@ fi
 
 # Carrega variáveis de ambiente
 echo "📋 Carregando variáveis de ambiente..."
-export $(cat .env | xargs)
+export $(cat .env | grep -v '^#' | xargs)
 
 # Verifica se as variáveis essenciais estão definidas
 if [ -z "$OPENAI_API_KEY" ]; then
