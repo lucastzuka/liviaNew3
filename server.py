@@ -261,25 +261,35 @@ class SlackSocketModeServer:
             spinner_task = asyncio.create_task(spinner_task_func())
 
             # --- Tag derivation utility ---
-            def derive_tag(tool_calls, audio_files):
+            def derive_tag(tool_calls, audio_files, user_message=None, final_response=None):
                 # Priority: AudioTranscribe > ImageGen > WebSearch > FileSearch > Vision > ChatAgent
                 if audio_files:
                     return "AudioTranscribe"
                 if tool_calls:
                     for call in tool_calls:
-                        name = call.get("tool_name", call.get("name", "")).lower()
+                        # Try both tool_name and tool_type (lowercase)
+                        name = (call.get("tool_name", "") or call.get("name", "")).lower()
+                        tool_type = call.get("tool_type", "").lower()
+                        # Map any call with "web_search" in tool_name or tool_type
+                        if "web_search" in name or "web_search" in tool_type:
+                            return "WebSearch"
                         # Special: file_search with file_names
-                        if name == "file_search":
+                        if name == "file_search" or tool_type == "file_search":
                             file_names = call.get("file_names")
                             if file_names and isinstance(file_names, list) and len(file_names) > 0:
                                 return file_names[0]
                             return "FileSearch"
-                        elif name == "web_search":
-                            return "WebSearch"
-                        elif name == "image_generation_tool":
+                        elif name == "image_generation_tool" or tool_type == "image_generation_tool":
                             return "ImageGen"
-                        elif name in {"image_vision", "image_vision_tool"}:
+                        elif name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
                             return "Vision"
+                # Fallback: If no tool_call, but looks like a web search from content
+                if final_response and user_message:
+                    import re
+                    if re.search(r"https?://", final_response):
+                        user_tokens = ["pesquise", "pesquisa", "search", "google", "net"]
+                        if any(token in user_message.lower() for token in user_tokens):
+                            return "WebSearch"
                 return "ChatAgent"
 
             # --- Determine initial response tag (heuristic) ---
@@ -391,7 +401,7 @@ class SlackSocketModeServer:
                         logger.warning(f"Failed to set header after spinner: {e}")
 
                 # Compute header_prefix_final based on tools actually used
-                tag_final = derive_tag(tool_calls, audio_files)
+                tag_final = derive_tag(tool_calls, audio_files, user_message=text, final_response=text_resp)
                 header_prefix_final = f"⛭ {tag_final}\n\n"
 
                 try:

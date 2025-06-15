@@ -598,16 +598,40 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
                         logger.info("Agent streaming response completed")
                 elif event.type == "run_item_stream_event":
                     if event.item.type == "tool_call_item":
-                        # Collect tool call info
+                        # Robust extraction of tool_name and tool_type
+                        tool_name = getattr(event.item, 'name', '')
+                        tool_type = ''
+                        # Try extracting from .tool attribute if present
+                        tool_obj = getattr(event.item, 'tool', None)
+                        if not tool_name and tool_obj:
+                            tool_name = getattr(tool_obj, 'name', '') or getattr(tool_obj, 'type', '')
+                        # Try .tool_name attribute
+                        if not tool_name:
+                            tool_name = getattr(event.item, 'tool_name', '')
+                        # Try .tool_type attribute (if present)
+                        if not tool_type and hasattr(event.item, 'tool_type'):
+                            tool_type = getattr(event.item, 'tool_type', '')
+                        # Try raw_json if still missing
+                        if (not tool_name or not tool_type) and hasattr(event.item, 'raw_json'):
+                            try:
+                                raw_json = getattr(event.item, 'raw_json', {})
+                                if isinstance(raw_json, dict):
+                                    if not tool_name:
+                                        tool_name = raw_json.get("name", raw_json.get("tool_name", ""))
+                                    if not tool_type:
+                                        tool_type = raw_json.get("type", raw_json.get("tool_type", ""))
+                            except Exception:
+                                pass
                         tool_call_info = {
                             "type": getattr(event.item, 'type', ''),
-                            "tool_name": getattr(event.item, 'name', ''),
+                            "tool_name": tool_name or '',
+                            "tool_type": tool_type or '',
                             "arguments": getattr(event.item, 'arguments', {}),
                             "output": getattr(event.item, 'output', None),
                             "error": getattr(event.item, 'error', None)
                         }
                         # Special: for file_search, try to extract file_names
-                        if tool_call_info["tool_name"].lower() == "file_search":
+                        if (tool_call_info["tool_name"] or "").lower() == "file_search":
                             output = tool_call_info.get("output", "")
                             file_names = re.findall(r"Arquivo[s]?:?\s*([^\n,]+)", str(output), re.IGNORECASE)
                             if not file_names:
