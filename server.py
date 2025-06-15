@@ -264,12 +264,26 @@ class SlackSocketModeServer:
 
             spinner_task = asyncio.create_task(spinner_task_func())
 
-            # --- Tag derivation utility ---
-            def derive_tag(tool_calls, audio_files, user_message=None, final_response=None):
-                # Priority: AudioTranscribe > ImageGen > WebSearch > Vision > MCPs > Model Name
-                # Note: FileSearch is always active (RAG), so we don't show it as a tag
+            # --- Cumulative Tag System ---
+            def derive_cumulative_tags(tool_calls, audio_files, image_urls, user_message=None, final_response=None):
+                """
+                Build cumulative tags showing all technologies used in the response.
+                Format: `⛭ gpt-4o` `Vision` `WebSearch` etc.
+                """
+                tags = []
+
+                # Always start with the model
+                tags.append("gpt-4o")
+
+                # Add Vision if images are being processed
+                if image_urls:
+                    tags.append("Vision")
+
+                # Add AudioTranscribe if audio files are present
                 if audio_files:
-                    return "AudioTranscribe"
+                    tags.append("AudioTranscribe")
+
+                # Add tools based on tool calls
                 if tool_calls:
                     for call in tool_calls:
                         # Try both tool_name and tool_type (lowercase)
@@ -278,29 +292,55 @@ class SlackSocketModeServer:
 
                         # Web Search detection
                         if "web_search" in name or "web_search" in tool_type:
-                            return "WebSearch"
+                            if "WebSearch" not in tags:
+                                tags.append("WebSearch")
 
                         # Image Generation detection
                         elif name == "image_generation_tool" or tool_type == "image_generation_tool":
-                            return "ImageGen"
+                            if "ImageGen" not in tags:
+                                tags.append("ImageGen")
 
-                        # Image Vision detection
-                        elif name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
-                            return "Vision"
-
-                        # MCP detection (future: McpEverhour, McpAsana, etc.)
+                        # MCP detection
                         elif "mcp" in name or "mcp" in tool_type:
                             # Extract MCP service name
                             if "everhour" in name or "everhour" in tool_type:
-                                return "McpEverhour"
+                                if "McpEverhour" not in tags:
+                                    tags.append("McpEverhour")
                             elif "asana" in name or "asana" in tool_type:
-                                return "McpAsana"
+                                if "McpAsana" not in tags:
+                                    tags.append("McpAsana")
                             elif "gmail" in name or "gmail" in tool_type:
-                                return "McpGmail"
-                            # Add more MCPs as needed
+                                if "McpGmail" not in tags:
+                                    tags.append("McpGmail")
 
                         # Skip file_search - it's always active (RAG)
                         # We don't show FileSearch tag since it's background functionality
+
+                # Enhanced detection: Check response content for web search indicators
+                if final_response and "WebSearch" not in tags:
+                    response_content = final_response.lower()
+                    web_indicators = [
+                        "brandcolorcode.com", "wikipedia.org", "google.com", "bing.com",
+                        "utm_source=openai", "search result", "according to", "source:",
+                        "based on search", "found on", "website", ".com", ".org", ".net"
+                    ]
+
+                    # Check for URLs and web indicators
+                    import re
+                    has_urls = bool(re.search(r"https?://", final_response))
+                    has_web_indicators = any(indicator in response_content for indicator in web_indicators)
+
+                    if has_urls or has_web_indicators:
+                        tags.append("WebSearch")
+
+                return tags
+
+            # Legacy function for backward compatibility
+            def derive_tag(tool_calls, audio_files, user_message=None, final_response=None):
+                """Legacy function - returns single tag for compatibility."""
+                tags = derive_cumulative_tags(tool_calls, audio_files, image_urls, user_message, final_response)
+                # Return the most important tag (last one added, or first if only model)
+                return tags[-1] if len(tags) > 1 else tags[0]
 
                 # Enhanced fallback: Check if response contains web search indicators
                 if final_response:
@@ -325,22 +365,28 @@ class SlackSocketModeServer:
                 # When no specific tools are used, show model name
                 return "gpt-4o"  # Updated to match agent model
 
-            # --- Determine initial response tag (heuristic) ---
-            def get_response_tag():
+            # --- Determine initial cumulative tags (heuristic) ---
+            def get_initial_cumulative_tags():
+                initial_tags = ["gpt-4o"]  # Always start with model
+
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
                     "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
                 ]
-                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                    return "ImageGen"
-                if audio_files:
-                    return "AudioTranscribe"
-                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                    return "Vision"
-                return "gpt-4o"
 
-            tag = get_response_tag()
-            header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
+                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("ImageGen")
+                if audio_files:
+                    initial_tags.append("AudioTranscribe")
+                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("Vision")
+
+                return initial_tags
+
+            initial_tags = get_initial_cumulative_tags()
+            # Format as: `⛭ gpt-4o` `Vision` etc.
+            tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
+            header_prefix = f"{tag_display}\n\n"
 
             try:
                 logger.info(
@@ -383,9 +429,11 @@ class SlackSocketModeServer:
                     # Update detected tools if provided
                     if tool_calls_detected:
                         detected_tools.extend(tool_calls_detected)
-                        # Update header based on detected tools
-                        new_tag = derive_tag(detected_tools, audio_files, user_message=text, final_response=full_text)
-                        current_header_prefix = f"`⛭ {new_tag}`\n\n"
+                        # Update header based on cumulative tags
+                        cumulative_tags = derive_cumulative_tags(detected_tools, audio_files, processed_image_urls, user_message=text, final_response=full_text)
+                        # Format as: `⛭ gpt-4o` `Vision` `WebSearch`
+                        tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(cumulative_tags)])
+                        current_header_prefix = f"{tag_display}\n\n"
 
                     should_update = (
                         len(current_text_only) - last_update_length >= 10 or
@@ -447,9 +495,11 @@ class SlackSocketModeServer:
                     except Exception as e:
                         logger.warning(f"Failed to set header after spinner: {e}")
 
-                # Compute header_prefix_final based on tools actually used
-                tag_final = derive_tag(tool_calls, audio_files, user_message=text, final_response=text_resp)
-                header_prefix_final = f"`⛭ {tag_final}`\n\n"
+                # Compute header_prefix_final based on tools actually used (cumulative)
+                final_cumulative_tags = derive_cumulative_tags(tool_calls, audio_files, processed_image_urls, user_message=text, final_response=text_resp)
+                # Format as: `⛭ gpt-4o` `Vision` `WebSearch`
+                final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
+                header_prefix_final = f"{final_tag_display}\n\n"
 
                 try:
                     formatted_response = header_prefix_final + format_message_for_slack(text_resp)
@@ -551,12 +601,20 @@ class SlackSocketModeServer:
 
             spinner_task = asyncio.create_task(spinner_task_func())
 
-            # --- Tag derivation utility ---
-            def derive_tag(tool_calls, audio_files):
-                # Priority: AudioTranscribe > ImageGen > WebSearch > Vision > MCPs > Model Name
-                # Note: FileSearch is always active (RAG), so we don't show it as a tag
+            # --- Cumulative Tag System for Non-Streaming ---
+            def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
+                """Build cumulative tags for non-streaming responses."""
+                tags = ["gpt-4o"]  # Always start with model
+
+                # Add Vision if images are being processed
+                if image_urls:
+                    tags.append("Vision")
+
+                # Add AudioTranscribe if audio files are present
                 if audio_files:
-                    return "AudioTranscribe"
+                    tags.append("AudioTranscribe")
+
+                # Add tools based on tool calls
                 if tool_calls:
                     for call in tool_calls:
                         name = call.get("tool_name", call.get("name", "")).lower()
@@ -564,46 +622,48 @@ class SlackSocketModeServer:
 
                         # Web Search detection
                         if "web_search" in name or "web_search" in tool_type:
-                            return "WebSearch"
+                            if "WebSearch" not in tags:
+                                tags.append("WebSearch")
 
                         # Image Generation detection
                         elif name == "image_generation_tool" or tool_type == "image_generation_tool":
-                            return "ImageGen"
+                            if "ImageGen" not in tags:
+                                tags.append("ImageGen")
 
-                        # Image Vision detection
-                        elif name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
-                            return "Vision"
-
-                        # MCP detection (future: McpEverhour, McpAsana, etc.)
+                        # MCP detection
                         elif "mcp" in name or "mcp" in tool_type:
                             # Extract MCP service name
                             if "everhour" in name or "everhour" in tool_type:
-                                return "McpEverhour"
+                                if "McpEverhour" not in tags:
+                                    tags.append("McpEverhour")
                             elif "asana" in name or "asana" in tool_type:
-                                return "McpAsana"
+                                if "McpAsana" not in tags:
+                                    tags.append("McpAsana")
                             elif "gmail" in name or "gmail" in tool_type:
-                                return "McpGmail"
-                            # Add more MCPs as needed
+                                if "McpGmail" not in tags:
+                                    tags.append("McpGmail")
 
-                        # Skip file_search - it's always active (RAG)
-                        # We don't show FileSearch tag since it's background functionality
+                return tags
 
-                # When no specific tools are used, show model name
-                return "gpt-4o"
+            def get_initial_tags_non_streaming():
+                initial_tags = ["gpt-4o"]  # Always start with model
 
-            def get_response_tag():
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
                     "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
                 ]
-                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                    return "ImageGen"
-                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                    return "Vision"
-                return "gpt-4o"
 
-            tag = get_response_tag()
-            header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
+                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("ImageGen")
+                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("Vision")
+
+                return initial_tags
+
+            initial_tags = get_initial_tags_non_streaming()
+            # Format as: `⛭ gpt-4o` `Vision` etc.
+            tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
+            header_prefix = f"{tag_display}\n\n"
 
             try:
                 logger.info(
@@ -627,8 +687,10 @@ class SlackSocketModeServer:
 
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
-                tag_final = derive_tag(tool_calls, [])
-                header_prefix_final = f"`⛭ {tag_final}`\n\n"
+                final_cumulative_tags = derive_cumulative_tags_non_streaming(tool_calls, [], processed_image_urls)
+                # Format as: `⛭ gpt-4o` `Vision` `WebSearch`
+                final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
+                header_prefix_final = f"{final_tag_display}\n\n"
 
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {text_resp}")
