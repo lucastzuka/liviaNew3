@@ -137,8 +137,25 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 5. Limit results to maximum 4 items per search
 </mcp_usage_rules>
 
+<search_strategy>
+CRITICAL: Use intelligent search strategy to avoid unnecessary tool calls:
+
+IF info is static/historical (e.g., coding principles, scientific facts, brand colors, company info)
+→ ANSWER DIRECTLY without tools (info rarely changes)
+
+ELSE IF info changes annually/slowly (e.g., rankings, statistics, yearly trends)
+→ ANSWER DIRECTLY but offer to search for latest updates
+
+ELSE IF info changes frequently (e.g., weather, news, stock prices, current events)
+→ USE WEB SEARCH immediately for accurate current information
+
+ELSE IF user asks about documents/files
+→ USE FILE SEARCH to find relevant documents in knowledge base
+</search_strategy>
+
 <response_guidelines>
-- Use web search for current information and facts
+- NEVER answer with uncertainty - if unsure, USE AVAILABLE TOOLS for verification
+- Use web search for current/changing information only
 - Use file search when users ask about documents
 - Provide detailed image analysis when images are shared
 - Try multiple search strategies if initial attempts fail
@@ -154,7 +171,7 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 </response_guidelines>
 """
         ),
-        model="gpt-4.1",
+        model="gpt-4o",  # Changed to gpt-4o for better vision support
         tools=[web_search_tool, file_search_tool],  # image_generation_tool temporariamente removida - erro tools[2].type
         mcp_servers=mcp_servers,
     )
@@ -794,14 +811,27 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
                             except Exception as e:
                                 logger.warning(f"DEBUG: Error parsing raw_json: {e}")
 
-                        # Fallback: Assume web_search if web search patterns detected
+                        # Enhanced detection: Check response content for web search indicators
                         if not tool_name:
-                            web_keywords = ["pesquisa", "pesquise", "search", "google", "busca", "procura", "internet", "net"]
-                            if any(keyword in message.lower() for keyword in web_keywords):
+                            # Check if response contains web search indicators
+                            response_content = full_response.lower()
+                            web_indicators = [
+                                "brandcolorcode.com", "wikipedia.org", "google.com", "bing.com",
+                                "utm_source=openai", "search result", "according to", "source:",
+                                "based on search", "found on", "website", ".com", ".org", ".net"
+                            ]
+
+                            if any(indicator in response_content for indicator in web_indicators):
                                 tool_name = "web_search"
-                                logger.info("DEBUG: Fallback detection - assuming web_search based on web search request")
+                                logger.info("DEBUG: WebSearch detected from response content indicators")
                             else:
-                                logger.info("DEBUG: No tool detected, will use model name as tag")
+                                # Fallback: Check message for search keywords
+                                web_keywords = ["pesquisa", "pesquise", "search", "google", "busca", "procura", "internet", "net"]
+                                if any(keyword in message.lower() for keyword in web_keywords):
+                                    tool_name = "web_search"
+                                    logger.info("DEBUG: Fallback detection - assuming web_search based on message keywords")
+                                else:
+                                    logger.info("DEBUG: No tool detected, will use model name as tag")
                         tool_call_info = {
                             "type": getattr(event.item, 'type', ''),
                             "tool_name": tool_name or '',

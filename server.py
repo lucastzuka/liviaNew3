@@ -302,16 +302,28 @@ class SlackSocketModeServer:
                         # Skip file_search - it's always active (RAG)
                         # We don't show FileSearch tag since it's background functionality
 
-                # Fallback: Check if response contains web sources (but only if explicitly requested)
-                if final_response and user_message:
+                # Enhanced fallback: Check if response contains web search indicators
+                if final_response:
                     import re
-                    if re.search(r"https?://", final_response):
-                        web_keywords = ["pesquisa na net", "search", "google", "busca na internet", "procura na web"]
-                        if any(keyword in user_message.lower() for keyword in web_keywords):
-                            return "WebSearch"
+                    response_lower = final_response.lower()
+
+                    # Strong indicators of web search usage
+                    web_indicators = [
+                        "brandcolorcode.com", "wikipedia.org", "google.com", "bing.com",
+                        "utm_source=openai", "search result", "according to", "source:",
+                        "based on search", "found on", "website", ".com", ".org", ".net",
+                        "search", "searched", "busca", "pesquisa"
+                    ]
+
+                    # Check for URLs and web indicators
+                    has_urls = bool(re.search(r"https?://", final_response))
+                    has_web_indicators = any(indicator in response_lower for indicator in web_indicators)
+
+                    if has_urls or has_web_indicators:
+                        return "WebSearch"
 
                 # When no specific tools are used, show model name
-                return "gpt-4.1"
+                return "gpt-4o"  # Updated to match agent model
 
             # --- Determine initial response tag (heuristic) ---
             def get_response_tag():
@@ -325,7 +337,7 @@ class SlackSocketModeServer:
                     return "AudioTranscribe"
                 if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
                     return "Vision"
-                return "gpt-4o-mini"
+                return "gpt-4o"
 
             tag = get_response_tag()
             header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
@@ -574,7 +586,7 @@ class SlackSocketModeServer:
                         # We don't show FileSearch tag since it's background functionality
 
                 # When no specific tools are used, show model name
-                return "gpt-4.1"
+                return "gpt-4o"
 
             def get_response_tag():
                 image_generation_keywords = [
@@ -585,7 +597,7 @@ class SlackSocketModeServer:
                     return "ImageGen"
                 if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
                     return "Vision"
-                return "gpt-4.1"
+                return "gpt-4o"
 
             tag = get_response_tag()
             header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
