@@ -266,80 +266,69 @@ class SlackSocketModeServer:
 
             # --- Tag derivation utility ---
             def derive_tag(tool_calls, audio_files, user_message=None, final_response=None):
-                # Priority: AudioTranscribe > ImageGen > WebSearch > Vision > MCPs > Model Name
-                # Note: FileSearch is always active (RAG), so we don't show it as a tag
+                """Return a concise tag representing all tools used."""
+                detected = set()
+
                 if audio_files:
-                    return "AudioTranscribe"
-                if tool_calls:
-                    for call in tool_calls:
-                        # Try both tool_name and tool_type (lowercase)
-                        name = (call.get("tool_name", "") or call.get("name", "")).lower()
-                        tool_type = call.get("tool_type", "").lower()
+                    detected.add("AudioTranscribe")
 
-                        # Web Search detection
-                        if "web_search" in name or "web_search" in tool_type:
-                            return "WebSearch"
+                for call in tool_calls or []:
+                    name = (call.get("tool_name") or call.get("name", "")).lower()
+                    tool_type = call.get("tool_type", "").lower()
 
-                        # Image Generation detection
-                        elif name == "image_generation_tool" or tool_type == "image_generation_tool":
-                            return "ImageGen"
+                    if "web_search" in name or "web_search" in tool_type:
+                        detected.add("WebSearch")
+                    if "file_search" in name or "file_search" in tool_type:
+                        detected.add("FileSearch")
+                    if name == "image_generation_tool" or tool_type == "image_generation_tool":
+                        detected.add("ImageGen")
+                    if name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
+                        detected.add("Vision")
+                    if "code_interpreter" in name or "code_interpreter" in tool_type or name == "python":
+                        detected.add("Code")
+                    if "prompt_cache" in name or "prompt_cache" in tool_type or "prompt_caching" in name:
+                        detected.add("PromptCache")
+                    if "mcp" in name or "mcp" in tool_type:
+                        if "everhour" in name or "everhour" in tool_type:
+                            detected.add("McpEverhour")
+                        elif "asana" in name or "asana" in tool_type:
+                            detected.add("McpAsana")
+                        elif "gmail" in name or "gmail" in tool_type:
+                            detected.add("McpGmail")
+                        else:
+                            detected.add("Mcp")
 
-                        # Image Vision detection
-                        elif name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
-                            return "Vision"
+                if user_message:
+                    msg = user_message.lower()
+                    if any(k in msg for k in ["gere uma imagem", "gerar imagem", "create image", "draw"]):
+                        detected.add("ImageGen")
+                    if any(k in msg for k in ["http://", "https://"]):
+                        detected.add("Vision")
+                    if any(k in msg for k in ["pesquise", "search", "google", "busca"]):
+                        detected.add("WebSearch")
 
-                        # MCP detection (future: McpEverhour, McpAsana, etc.)
-                        elif "mcp" in name or "mcp" in tool_type:
-                            # Extract MCP service name
-                            if "everhour" in name or "everhour" in tool_type:
-                                return "McpEverhour"
-                            elif "asana" in name or "asana" in tool_type:
-                                return "McpAsana"
-                            elif "gmail" in name or "gmail" in tool_type:
-                                return "McpGmail"
-                            # Add more MCPs as needed
-
-                        # Skip file_search - it's always active (RAG)
-                        # We don't show FileSearch tag since it's background functionality
-
-                # Enhanced fallback: Check if response contains web search indicators
                 if final_response:
-                    import re
-                    response_lower = final_response.lower()
-
-                    # Strong indicators of web search usage
+                    resp = final_response.lower()
                     web_indicators = [
                         "brandcolorcode.com", "wikipedia.org", "google.com", "bing.com",
                         "utm_source=openai", "search result", "according to", "source:",
-                        "based on search", "found on", "website", ".com", ".org", ".net",
-                        "search", "searched", "busca", "pesquisa"
+                        "based on search", "found on", "website"
                     ]
+                    if any(ind in resp for ind in web_indicators) or "http" in resp:
+                        detected.add("WebSearch")
 
-                    # Check for URLs and web indicators
-                    has_urls = bool(re.search(r"https?://", final_response))
-                    has_web_indicators = any(indicator in response_lower for indicator in web_indicators)
+                if not detected:
+                    detected.add("gpt-4o")
 
-                    if has_urls or has_web_indicators:
-                        return "WebSearch"
-
-                # When no specific tools are used, show model name
-                return "gpt-4o"  # Updated to match agent model
-
-            # --- Determine initial response tag (heuristic) ---
-            def get_response_tag():
-                image_generation_keywords = [
-                    "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
-                    "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
+                order = [
+                    "AudioTranscribe", "ImageGen", "WebSearch", "Vision", "FileSearch",
+                    "Code", "PromptCache", "McpEverhour", "McpAsana", "McpGmail",
+                    "Mcp", "gpt-4o"
                 ]
-                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                    return "ImageGen"
-                if audio_files:
-                    return "AudioTranscribe"
-                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                    return "Vision"
-                return "gpt-4o"
+                return "+".join([t for t in order if t in detected])
 
-            tag = get_response_tag()
+            # --- Initial header tag based on heuristics ---
+            tag = derive_tag([], audio_files, user_message=text)
             header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
 
             try:
@@ -553,56 +542,49 @@ class SlackSocketModeServer:
 
             # --- Tag derivation utility ---
             def derive_tag(tool_calls, audio_files):
-                # Priority: AudioTranscribe > ImageGen > WebSearch > Vision > MCPs > Model Name
-                # Note: FileSearch is always active (RAG), so we don't show it as a tag
+                """Derive tags from the tools used in the response."""
+                detected = set()
+
                 if audio_files:
-                    return "AudioTranscribe"
-                if tool_calls:
-                    for call in tool_calls:
-                        name = call.get("tool_name", call.get("name", "")).lower()
-                        tool_type = call.get("tool_type", "").lower()
+                    detected.add("AudioTranscribe")
 
-                        # Web Search detection
-                        if "web_search" in name or "web_search" in tool_type:
-                            return "WebSearch"
+                for call in tool_calls or []:
+                    name = (call.get("tool_name") or call.get("name", "")).lower()
+                    tool_type = call.get("tool_type", "").lower()
 
-                        # Image Generation detection
-                        elif name == "image_generation_tool" or tool_type == "image_generation_tool":
-                            return "ImageGen"
+                    if "web_search" in name or "web_search" in tool_type:
+                        detected.add("WebSearch")
+                    if "file_search" in name or "file_search" in tool_type:
+                        detected.add("FileSearch")
+                    if name == "image_generation_tool" or tool_type == "image_generation_tool":
+                        detected.add("ImageGen")
+                    if name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
+                        detected.add("Vision")
+                    if "code_interpreter" in name or "code_interpreter" in tool_type or name == "python":
+                        detected.add("Code")
+                    if "prompt_cache" in name or "prompt_cache" in tool_type or "prompt_caching" in name:
+                        detected.add("PromptCache")
+                    if "mcp" in name or "mcp" in tool_type:
+                        if "everhour" in name or "everhour" in tool_type:
+                            detected.add("McpEverhour")
+                        elif "asana" in name or "asana" in tool_type:
+                            detected.add("McpAsana")
+                        elif "gmail" in name or "gmail" in tool_type:
+                            detected.add("McpGmail")
+                        else:
+                            detected.add("Mcp")
 
-                        # Image Vision detection
-                        elif name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
-                            return "Vision"
+                if not detected:
+                    detected.add("gpt-4o")
 
-                        # MCP detection (future: McpEverhour, McpAsana, etc.)
-                        elif "mcp" in name or "mcp" in tool_type:
-                            # Extract MCP service name
-                            if "everhour" in name or "everhour" in tool_type:
-                                return "McpEverhour"
-                            elif "asana" in name or "asana" in tool_type:
-                                return "McpAsana"
-                            elif "gmail" in name or "gmail" in tool_type:
-                                return "McpGmail"
-                            # Add more MCPs as needed
-
-                        # Skip file_search - it's always active (RAG)
-                        # We don't show FileSearch tag since it's background functionality
-
-                # When no specific tools are used, show model name
-                return "gpt-4o"
-
-            def get_response_tag():
-                image_generation_keywords = [
-                    "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
-                    "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
+                order = [
+                    "AudioTranscribe", "ImageGen", "WebSearch", "Vision", "FileSearch",
+                    "Code", "PromptCache", "McpEverhour", "McpAsana", "McpGmail",
+                    "Mcp", "gpt-4o"
                 ]
-                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                    return "ImageGen"
-                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                    return "Vision"
-                return "gpt-4o"
+                return "+".join([t for t in order if t in detected])
 
-            tag = get_response_tag()
+            tag = derive_tag([], [], user_message=text)
             header_prefix = f"`⛭ {tag}`\n\n"  # No backticks
 
             try:
