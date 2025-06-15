@@ -126,7 +126,7 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 <available_tools>
 - Web Search Tool: Search internet for current information
 - File Search Tool: Search uploaded documents in knowledge base
-- Image Vision: Analyze uploaded images or URLs
+- Image Vision: Analyze uploaded images or URLs - you have FULL vision capabilities
 - Image Generation Tool: Create images using gpt-image-1 model
 """ + f"{zapier_tools_description}" + """
 <mcp_usage_rules>
@@ -157,7 +157,8 @@ ELSE IF user asks about documents/files
 - NEVER answer with uncertainty - if unsure, USE AVAILABLE TOOLS for verification
 - Use web search for current/changing information only
 - Use file search when users ask about documents
-- Provide detailed image analysis when images are shared
+- Provide detailed image analysis when images are shared - you CAN see and analyze images perfectly
+- NEVER say you cannot see images - you have full vision capabilities and should analyze them directly
 - Try multiple search strategies if initial attempts fail
 - Suggest alternative search terms when no results found
 - Handle 'TargetGroup' searches as 'TargetGroupIndex_BR2024'
@@ -171,7 +172,7 @@ ELSE IF user asks about documents/files
 </response_guidelines>
 """
         ),
-        model="gpt-4o",  # Changed to gpt-4o for better vision support
+        model="gpt-4.1",  # Changed to gpt-4o for better vision support
         tools=[web_search_tool, file_search_tool],  # image_generation_tool temporariamente removida - erro tools[2].type
         mcp_servers=mcp_servers,
     )

@@ -264,78 +264,98 @@ class SlackSocketModeServer:
 
             spinner_task = asyncio.create_task(spinner_task_func())
 
-            # --- Tag derivation utility ---
-            def derive_tag(tool_calls, audio_files, user_message=None, final_response=None):
-                """Return a concise tag representing all tools used."""
-                detected = set()
+            # --- Cumulative Tag System ---
+            def derive_cumulative_tags(tool_calls, audio_files, image_urls, user_message=None, final_response=None):
+                """
+                Build cumulative tags showing all technologies used in the response.
+                Format: `⛭ gpt-4.1` `Vision` `WebSearch` etc.
+                """
+                tags = []
 
+                # Always start with the model
+                tags.append("gpt-4.1")
+
+                # Add Vision if images are being processed
+                if image_urls:
+                    tags.append("Vision")
+
+                # Add AudioTranscribe if audio files are present
                 if audio_files:
-                    detected.add("AudioTranscribe")
+                    tags.append("AudioTranscribe")
 
-                for call in tool_calls or []:
-                    name = (call.get("tool_name") or call.get("name", "")).lower()
-                    tool_type = call.get("tool_type", "").lower()
+                # Add tools based on tool calls
+                if tool_calls:
+                    for call in tool_calls:
+                        # Try both tool_name and tool_type (lowercase)
+                        name = (call.get("tool_name", "") or call.get("name", "")).lower()
+                        tool_type = call.get("tool_type", "").lower()
 
-                    if "web_search" in name or "web_search" in tool_type:
-                        detected.add("WebSearch")
-                    if "file_search" in name or "file_search" in tool_type:
-                        detected.add("FileSearch")
-                    if name == "image_generation_tool" or tool_type == "image_generation_tool":
-                        detected.add("ImageGen")
-                    if name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
-                        detected.add("Vision")
-                    if "code_interpreter" in name or "code_interpreter" in tool_type or name == "python":
-                        detected.add("Code")
-                    if "prompt_cache" in name or "prompt_cache" in tool_type or "prompt_caching" in name:
-                        detected.add("PromptCache")
-                    if "mcp" in name or "mcp" in tool_type:
-                        if "everhour" in name or "everhour" in tool_type:
-                            detected.add("McpEverhour")
-                        elif "asana" in name or "asana" in tool_type:
-                            detected.add("McpAsana")
-                        elif "gmail" in name or "gmail" in tool_type:
-                            detected.add("McpGmail")
-                        else:
-                            detected.add("Mcp")
+                        # Web Search detection
+                        if "web_search" in name or "web_search" in tool_type:
+                            if "WebSearch" not in tags:
+                                tags.append("WebSearch")
 
-                if user_message:
-                    msg = user_message.lower()
-                    if any(k in msg for k in ["gere uma imagem", "gerar imagem", "create image", "draw"]):
-                        detected.add("ImageGen")
-                    if any(k in msg for k in ["http://", "https://"]):
-                        detected.add("Vision")
-                    if any(k in msg for k in ["pesquise", "search", "google", "busca"]):
-                        detected.add("WebSearch")
+                        # Image Generation detection
+                        elif name == "image_generation_tool" or tool_type == "image_generation_tool":
+                            if "ImageGen" not in tags:
+                                tags.append("ImageGen")
 
-                if final_response:
-                    resp = final_response.lower()
+                        # MCP detection
+                        elif "mcp" in name or "mcp" in tool_type:
+                            # Extract MCP service name
+                            if "everhour" in name or "everhour" in tool_type:
+                                if "McpEverhour" not in tags:
+                                    tags.append("McpEverhour")
+                            elif "asana" in name or "asana" in tool_type:
+                                if "McpAsana" not in tags:
+                                    tags.append("McpAsana")
+                            elif "gmail" in name or "gmail" in tool_type:
+                                if "McpGmail" not in tags:
+                                    tags.append("McpGmail")
+
+                        # Skip file_search - it's always active (RAG)
+                        # We don't show FileSearch tag since it's background functionality
+
+                # Enhanced detection: Check response content for web search indicators
+                if final_response and "WebSearch" not in tags:
+                    response_content = final_response.lower()
                     web_indicators = [
                         "brandcolorcode.com", "wikipedia.org", "google.com", "bing.com",
                         "utm_source=openai", "search result", "according to", "source:",
-                        "based on search", "found on", "website"
+                        "based on search", "found on", "website", ".com", ".org", ".net"
                     ]
-                    if any(ind in resp for ind in web_indicators) or "http" in resp:
-                        detected.add("WebSearch")
 
-                if not detected:
-                    detected.add("gpt-4o")
+                    # Check for URLs and web indicators
+                    import re
+                    has_urls = bool(re.search(r"https?://", final_response))
+                    has_web_indicators = any(indicator in response_content for indicator in web_indicators)
 
-                order = [
-                    "AudioTranscribe", "ImageGen", "WebSearch", "Vision", "FileSearch",
-                    "Code", "PromptCache", "McpEverhour", "McpAsana", "McpGmail",
-                    "Mcp", "gpt-4o"
+                    if has_urls or has_web_indicators:
+                        tags.append("WebSearch")
+
+                return tags
+
+            # --- Determine initial cumulative tags (heuristic) ---
+            def get_initial_cumulative_tags():
+                initial_tags = ["gpt-4.1"]  # Always start with model
+
+                image_generation_keywords = [
+                    "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
+                    "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
                 ]
-                # Convert to cumulative format: `⛭ gpt-4o` `Vision` `WebSearch`
-                tags_in_order = [t for t in order if t in detected]
-                if tags_in_order:
-                    # Format as cumulative tags with first one having ⛭ symbol
-                    formatted_tags = [f"`⛭ {tags_in_order[0]}`"] + [f"`{tag}`" for tag in tags_in_order[1:]]
-                    return " ".join(formatted_tags)
-                else:
-                    return "`⛭ gpt-4o`"
 
-            # --- Initial header tag based on heuristics ---
-            tag_display = derive_tag([], audio_files, user_message=text)
+                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("ImageGen")
+                if audio_files:
+                    initial_tags.append("AudioTranscribe")
+                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("Vision")
+
+                return initial_tags
+
+            initial_tags = get_initial_cumulative_tags()
+            # Format as: `⛭ gpt-4.1` `Vision` etc.
+            tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
             header_prefix = f"{tag_display}\n\n"
 
             try:
@@ -344,7 +364,7 @@ class SlackSocketModeServer:
                 )
 
                 # If image generation, call handler (it does its own spinner/updating)
-                if "ImageGen" in tag_display:
+                if "ImageGen" in initial_tags:
                     stop_event.set()
                     try:
                         await spinner_task
@@ -379,9 +399,11 @@ class SlackSocketModeServer:
                     # Update detected tools if provided
                     if tool_calls_detected:
                         detected_tools.extend(tool_calls_detected)
-                        # Update header based on detected tools
-                        new_tag_display = derive_tag(detected_tools, audio_files, user_message=text, final_response=full_text)
-                        current_header_prefix = f"{new_tag_display}\n\n"
+                        # Update header based on cumulative tags
+                        cumulative_tags = derive_cumulative_tags(detected_tools, audio_files, processed_image_urls, user_message=text, final_response=full_text)
+                        # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                        tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(cumulative_tags)])
+                        current_header_prefix = f"{tag_display}\n\n"
 
                     should_update = (
                         len(current_text_only) - last_update_length >= 10 or
@@ -443,9 +465,11 @@ class SlackSocketModeServer:
                     except Exception as e:
                         logger.warning(f"Failed to set header after spinner: {e}")
 
-                # Compute header_prefix_final based on tools actually used
-                tag_final_display = derive_tag(tool_calls, audio_files, user_message=text, final_response=text_resp)
-                header_prefix_final = f"{tag_final_display}\n\n"
+                # Compute header_prefix_final based on tools actually used (cumulative)
+                final_cumulative_tags = derive_cumulative_tags(tool_calls, audio_files, processed_image_urls, user_message=text, final_response=text_resp)
+                # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
+                header_prefix_final = f"{final_tag_display}\n\n"
 
                 try:
                     formatted_response = header_prefix_final + format_message_for_slack(text_resp)
@@ -547,79 +571,68 @@ class SlackSocketModeServer:
 
             spinner_task = asyncio.create_task(spinner_task_func())
 
-            # --- Tag derivation utility ---
-            def derive_tag(tool_calls, audio_files, user_message=None, final_response=None):
-                """Derive tags from the tools used in the response with intelligent detection."""
-                detected = set()
+            # --- Cumulative Tag System for Non-Streaming ---
+            def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
+                """Build cumulative tags for non-streaming responses."""
+                tags = ["gpt-4.1"]  # Always start with model
 
+                # Add Vision if images are being processed
+                if image_urls:
+                    tags.append("Vision")
+
+                # Add AudioTranscribe if audio files are present
                 if audio_files:
-                    detected.add("AudioTranscribe")
+                    tags.append("AudioTranscribe")
 
-                for call in tool_calls or []:
-                    name = (call.get("tool_name") or call.get("name", "")).lower()
-                    tool_type = call.get("tool_type", "").lower()
+                # Add tools based on tool calls
+                if tool_calls:
+                    for call in tool_calls:
+                        name = call.get("tool_name", call.get("name", "")).lower()
+                        tool_type = call.get("tool_type", "").lower()
 
-                    if "web_search" in name or "web_search" in tool_type:
-                        detected.add("WebSearch")
-                    if "file_search" in name or "file_search" in tool_type:
-                        detected.add("FileSearch")
-                    if name == "image_generation_tool" or tool_type == "image_generation_tool":
-                        detected.add("ImageGen")
-                    if name in {"image_vision", "image_vision_tool"} or tool_type in {"image_vision", "image_vision_tool"}:
-                        detected.add("Vision")
-                    if "code_interpreter" in name or "code_interpreter" in tool_type or name == "python":
-                        detected.add("Code")
-                    if "prompt_cache" in name or "prompt_cache" in tool_type or "prompt_caching" in name:
-                        detected.add("PromptCache")
-                    if "mcp" in name or "mcp" in tool_type:
-                        if "everhour" in name or "everhour" in tool_type:
-                            detected.add("McpEverhour")
-                        elif "asana" in name or "asana" in tool_type:
-                            detected.add("McpAsana")
-                        elif "gmail" in name or "gmail" in tool_type:
-                            detected.add("McpGmail")
-                        else:
-                            detected.add("Mcp")
+                        # Web Search detection
+                        if "web_search" in name or "web_search" in tool_type:
+                            if "WebSearch" not in tags:
+                                tags.append("WebSearch")
 
-                # Enhanced detection from user message content
-                if user_message:
-                    msg = user_message.lower()
-                    if any(k in msg for k in ["gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar", "create image", "draw"]):
-                        detected.add("ImageGen")
-                    if any(k in msg for k in ["http://", "https://"]):
-                        detected.add("Vision")
-                    if any(k in msg for k in ["pesquise", "search", "google", "busca", "procure"]):
-                        detected.add("WebSearch")
+                        # Image Generation detection
+                        elif name == "image_generation_tool" or tool_type == "image_generation_tool":
+                            if "ImageGen" not in tags:
+                                tags.append("ImageGen")
 
-                # Enhanced detection from response content
-                if final_response:
-                    resp = final_response.lower()
-                    web_indicators = [
-                        "brandcolorcode.com", "wikipedia.org", "google.com", "bing.com",
-                        "utm_source=openai", "search result", "according to", "source:",
-                        "based on search", "found on", "website"
-                    ]
-                    if any(ind in resp for ind in web_indicators) or "http" in resp:
-                        detected.add("WebSearch")
+                        # MCP detection
+                        elif "mcp" in name or "mcp" in tool_type:
+                            # Extract MCP service name
+                            if "everhour" in name or "everhour" in tool_type:
+                                if "McpEverhour" not in tags:
+                                    tags.append("McpEverhour")
+                            elif "asana" in name or "asana" in tool_type:
+                                if "McpAsana" not in tags:
+                                    tags.append("McpAsana")
+                            elif "gmail" in name or "gmail" in tool_type:
+                                if "McpGmail" not in tags:
+                                    tags.append("McpGmail")
 
-                if not detected:
-                    detected.add("gpt-4o")
+                return tags
 
-                order = [
-                    "AudioTranscribe", "ImageGen", "WebSearch", "Vision", "FileSearch",
-                    "Code", "PromptCache", "McpEverhour", "McpAsana", "McpGmail",
-                    "Mcp", "gpt-4o"
+            def get_initial_tags_non_streaming():
+                initial_tags = ["gpt-4.1"]  # Always start with model
+
+                image_generation_keywords = [
+                    "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
+                    "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
                 ]
-                # Convert to cumulative format: `⛭ gpt-4o` `Vision` `WebSearch`
-                tags_in_order = [t for t in order if t in detected]
-                if tags_in_order:
-                    # Format as cumulative tags with first one having ⛭ symbol
-                    formatted_tags = [f"`⛭ {tags_in_order[0]}`"] + [f"`{tag}`" for tag in tags_in_order[1:]]
-                    return " ".join(formatted_tags)
-                else:
-                    return "`⛭ gpt-4o`"
 
-            tag_display = derive_tag([], [], user_message=text)
+                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("ImageGen")
+                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("Vision")
+
+                return initial_tags
+
+            initial_tags = get_initial_tags_non_streaming()
+            # Format as: `⛭ gpt-4.1` `Vision` etc.
+            tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
             header_prefix = f"{tag_display}\n\n"
 
             try:
@@ -644,8 +657,10 @@ class SlackSocketModeServer:
 
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
-                tag_final_display = derive_tag(tool_calls, [], user_message=text, final_response=text_resp)
-                header_prefix_final = f"{tag_final_display}\n\n"
+                final_cumulative_tags = derive_cumulative_tags_non_streaming(tool_calls, [], processed_image_urls)
+                # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
+                header_prefix_final = f"{final_tag_display}\n\n"
 
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {text_resp}")
