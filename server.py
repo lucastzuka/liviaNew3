@@ -237,7 +237,7 @@ class SlackSocketModeServer:
             spinner_symbols = ["𖧹", "๏"]
             spinner_idx = 0
             stop_event = asyncio.Event()
-            spinner_msg = await say(text="`𖧹`", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            spinner_msg = await say(text="𖧹", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             message_ts = spinner_msg.get("ts")
 
             async def spinner_task_func():
@@ -249,7 +249,7 @@ class SlackSocketModeServer:
                         await self.app.client.chat_update(
                             channel=original_channel_id,
                             ts=message_ts,
-                            text=f"`{spinner_symbols[spinner_idx]}`"
+                            text=spinner_symbols[spinner_idx]
                         )
                     except Exception as update_error:
                         logger.warning(f"Spinner update failed: {update_error}")
@@ -279,7 +279,7 @@ class SlackSocketModeServer:
                 return "ChatAgent"
 
             tag = get_response_tag()
-            header = f"`⛭{tag}`\n\n"
+            header_prefix = f"⛭ {tag}\n\n"  # Space after icon, no backticks
 
             try:
                 logger.info(
@@ -303,29 +303,50 @@ class SlackSocketModeServer:
                     processed_image_urls = await ImageProcessor.process_image_urls(image_urls)
 
                 # Streaming callback to update Slack message
-                current_text = ""
+                current_text_only = ""
+                sent_header = False
                 last_update_length = 0
                 import time
                 last_update_time = time.time()
 
                 async def stream_callback(delta_text: str, full_text: str):
-                    nonlocal current_text, last_update_length, last_update_time
-                    current_text = full_text
+                    nonlocal current_text_only, last_update_length, last_update_time, sent_header
+                    current_text_only = full_text
                     current_time = time.time()
                     should_update = (
-                        len(current_text) - last_update_length >= 10 or
+                        len(current_text_only) - last_update_length >= 10 or
                         current_time - last_update_time >= 0.5 or
                         not delta_text
                     )
-                    if should_update and current_text:
+
+                    if not sent_header:
+                        # Stop spinner, wait for it, then set header before first chunk
+                        stop_event.set()
                         try:
-                            formatted_text = header + format_message_for_slack(current_text)
+                            await spinner_task
+                        except Exception:
+                            pass
+                        try:
+                            await self.app.client.chat_update(
+                                channel=original_channel_id,
+                                ts=message_ts,
+                                text=header_prefix  # Only header, body comes after
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to set header before streaming: {e}")
+                        sent_header = True
+                        last_update_length = 0
+                        last_update_time = current_time
+
+                    if should_update and current_text_only:
+                        try:
+                            formatted_text = header_prefix + format_message_for_slack(current_text_only)
                             await self.app.client.chat_update(
                                 channel=original_channel_id,
                                 ts=message_ts,
                                 text=formatted_text
                             )
-                            last_update_length = len(current_text)
+                            last_update_length = len(current_text_only)
                             last_update_time = current_time
                         except Exception as update_error:
                             logger.warning(f"Failed to update streaming message: {update_error}")
@@ -334,13 +355,24 @@ class SlackSocketModeServer:
                 response = await process_message(agent, context_input, processed_image_urls, stream_callback)
 
                 # Final update with complete response
-                stop_event.set()
+                if not sent_header:
+                    # If for some reason we never got a chunk, stop spinner and show header
+                    stop_event.set()
+                    try:
+                        await spinner_task
+                    except Exception:
+                        pass
+                    try:
+                        await self.app.client.chat_update(
+                            channel=original_channel_id,
+                            ts=message_ts,
+                            text=header_prefix
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to set header after spinner: {e}")
+
                 try:
-                    await spinner_task
-                except Exception:
-                    pass
-                try:
-                    formatted_response = header + format_message_for_slack(str(response))
+                    formatted_response = header_prefix + format_message_for_slack(str(response))
                     await self.app.client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
@@ -417,7 +449,7 @@ class SlackSocketModeServer:
             spinner_symbols = ["𖧹", "๏"]
             spinner_idx = 0
             stop_event = asyncio.Event()
-            spinner_msg = await say(text="`𖧹`", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            spinner_msg = await say(text="𖧹", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             message_ts = spinner_msg.get("ts")
 
             async def spinner_task_func():
@@ -428,7 +460,7 @@ class SlackSocketModeServer:
                         await self.app.client.chat_update(
                             channel=original_channel_id,
                             ts=message_ts,
-                            text=f"`{spinner_symbols[spinner_idx]}`"
+                            text=spinner_symbols[spinner_idx]
                         )
                     except Exception as update_error:
                         logger.warning(f"Spinner update failed: {update_error}")
@@ -451,7 +483,7 @@ class SlackSocketModeServer:
                 return "ChatAgent"
 
             tag = get_response_tag()
-            header = f"`⛭{tag}`\n\n"
+            header_prefix = f"⛭ {tag}\n\n"  # Space after icon, no backticks
 
             try:
                 logger.info(
@@ -473,7 +505,7 @@ class SlackSocketModeServer:
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {response}")
 
-                formatted_response = header + format_message_for_slack(str(response))
+                formatted_response = header_prefix + format_message_for_slack(str(response))
                 await self.app.client.chat_update(
                     channel=original_channel_id,
                     ts=message_ts,
