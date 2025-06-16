@@ -7,6 +7,7 @@ Exports all available tools for the chatbot.
 
 from .web_search import WebSearchTool
 from .image_generation import ImageGenerationTool, image_generator
+from .code_interpreter import CodeInterpreterTool
 
 # Enhanced ImageProcessor class with full functionality
 class ImageProcessor:
@@ -109,4 +110,10 @@ class ImageProcessor:
             logger.error(f"Error processing image URL {image_url}: {e}")
             return None
 
-__all__ = ["WebSearchTool", "ImageProcessor", "ImageGenerationTool", "image_generator"]
+__all__ = [
+    "WebSearchTool",
+    "ImageProcessor",
+    "ImageGenerationTool",
+    "image_generator",
+    "CodeInterpreterTool",
+]

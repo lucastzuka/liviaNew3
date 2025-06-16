@@ -24,6 +24,8 @@
 - **🎵 Audio Transcription** - Transcrição de áudios (mp3, wav, m4a, ogg, flac, webm) de audios enviados pelo usuario para o bot no slack.
 - **👁️ Image Vision** - Análise de imagens com IA (PNG, JPEG, WEBP, GIF)
 - **🎨 Image Generation** - Geração de imagens usando gpt-image-1 sem streaming
+- **🧮 Code Interpreter** - Execução de pequenos trechos de código Python
+- **🗄️ Prompt Caching** - Reutilização automática de respostas para prompts repetidos
 - **⚡ 9 MCPs Zapier** - Asana, Google Drive, Everhour, Gmail, Calendar, Docs, Analytics, etc.
 - **✨ Formatação Slack Perfeita** - Conversão automática markdown → Slack
   - `**negrito**` → `*negrito*`

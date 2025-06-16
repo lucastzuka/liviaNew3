@@ -17,7 +17,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 import ssl
 import certifi
 import tiktoken
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from dotenv import load_dotenv
 
 
@@ -60,6 +60,8 @@ except Exception:
     max_concurrency = 5
 agent_semaphore = asyncio.Semaphore(max_concurrency)
 processed_messages = set()  # Cache de mensagens processadas
+prompt_cache = OrderedDict()
+PROMPT_CACHE_LIMIT = 50
 bot_user_id = "U057233T98A"  # ID do bot no Slack - IMPORTANTE para detectar menções
 
 # Token usage tracking per thread/channel
@@ -259,6 +261,18 @@ class SlackSocketModeServer:
         async with agent_semaphore:
             thinking_msg = await say(text=":hourglass_flowing_sand: Pensando...", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             message_ts = thinking_msg.get("ts")
+
+            cache_key = context_input.strip()
+            if cache_key in prompt_cache:
+                logger.info("Using cached response for prompt")
+                cached_text = prompt_cache[cache_key]
+                await self.app.client.chat_update(
+                    channel=original_channel_id,
+                    ts=message_ts,
+                    text=cached_text,
+                )
+                prompt_cache.move_to_end(cache_key)
+                return
 
             # --- Cumulative Tag System ---
             def derive_cumulative_tags(tool_calls, audio_files, image_urls, user_message=None, final_response=None):
@@ -553,6 +567,10 @@ class SlackSocketModeServer:
                     f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE (STREAMING): {formatted_response}"
                 )
 
+                prompt_cache[cache_key] = formatted_response
+                if len(prompt_cache) > PROMPT_CACHE_LIMIT:
+                    prompt_cache.popitem(last=False)
+
             except Exception as e:
                 logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)
                 try:
@@ -607,6 +625,18 @@ class SlackSocketModeServer:
         async with agent_semaphore:
             thinking_msg = await say(text=":hourglass_flowing_sand:Pensando...", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             message_ts = thinking_msg.get("ts")
+
+            cache_key = context_input.strip()
+            if cache_key in prompt_cache:
+                logger.info("Using cached response for prompt")
+                cached_text = prompt_cache[cache_key]
+                await self.app.client.chat_update(
+                    channel=original_channel_id,
+                    ts=message_ts,
+                    text=cached_text
+                )
+                prompt_cache.move_to_end(cache_key)
+                return
 
             # --- Cumulative Tag System for Non-Streaming ---
             def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
@@ -788,6 +818,9 @@ class SlackSocketModeServer:
                     ts=message_ts,
                     text=formatted_response
                 )
+                prompt_cache[cache_key] = formatted_response
+                if len(prompt_cache) > PROMPT_CACHE_LIMIT:
+                    prompt_cache.popitem(last=False)
             except Exception as e:
                 logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
                 await self.app.client.chat_update(

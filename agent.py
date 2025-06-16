@@ -16,7 +16,16 @@ import tiktoken
 from dotenv import load_dotenv
 
 # OpenAI Agents SDK components
-from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers, FileSearchTool
+from agents import (
+    Agent,
+    Runner,
+    gen_trace_id,
+    trace,
+    WebSearchTool,
+    ItemHelpers,
+    FileSearchTool,
+)
+from tools.code_interpreter import CodeInterpreterTool
 
 # Load environment variables from .env file
 env_path = Path('.') / '.env'
@@ -55,6 +64,7 @@ async def create_agent() -> Agent:
     logger.info("Creating Livia - the Slack Chatbot Agent...")
 
     web_search_tool = WebSearchTool(search_context_size="medium")
+    code_interpreter_tool = CodeInterpreterTool()
 
     # File Search Tool configuration
     file_search_tool = FileSearchTool(
@@ -131,10 +141,13 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 </communication_style>
 
 <available_tools>
-- Web Search Tool: Search internet for current information
-- File Search Tool: Search uploaded documents in knowledge base
-- Image Vision: Analyze uploaded images or URLs - you have FULL vision capabilities
-- Image Generation Tool: Create images using gpt-image-1 model
+- Web Search Tool: search the internet for current information
+- File Search Tool: search uploaded documents in the knowledge base
+- Image Vision: analyze uploaded images or URLs
+- Image Generation Tool: create images with gpt-image-1
+- Code Interpreter: run short Python snippets and return the output
+- Audio Transcription: convert user audio files to text
+- Prompt Caching: reuse stored answers for repeated prompts
 """ + f"{zapier_tools_description}" + """
 <mcp_usage_rules>
 1. Sequential Search Strategy: workspace → project → task
@@ -180,7 +193,7 @@ ELSE IF user asks about documents/files
 """
         ),
         model="gpt-4.1",  # Changed to gpt-4o for better vision support
-        tools=[web_search_tool, file_search_tool],  # image_generation_tool temporariamente removida - erro tools[2].type
+        tools=[web_search_tool, file_search_tool, code_interpreter_tool],
         mcp_servers=mcp_servers,
     )
     servers_info = " and ".join(server_descriptions)
@@ -371,8 +384,8 @@ If everhour_find_task returns empty results ({{}}), try these alternatives:
 5. If user mentions "Terminar Livia 2.0", use taskId: ev:273393148295192 directly
 
 📅 **DATE HANDLING**:
-- Always use today's date: 2025-06-15 (format: YYYY-MM-DD)
-- Never use old dates like 2023-10-03
+- Always use the current date in YYYY-MM-DD format
+- Avoid using outdated dates
 
 🎯 **FOR OTHER WORKFLOWS**:
 - Break down complex requests into sequential tool calls
@@ -389,7 +402,7 @@ If everhour_find_task returns empty results ({{}}), try these alternatives:
 - ALWAYS call everhour_add_time tool with these exact parameters:
   - taskId: ev:273447513319222 (for "Teste 1.0")
   - time: "1h" (or user-specified time)
-  - date: "2025-06-15"
+  - date: "<today>"  # always use today's date
   - comment: "Time added via Livia"
 
 📋 **RESPONSE FORMAT** (Portuguese):
@@ -536,7 +549,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                     "- Step 3: If task not found, try everhour_list_tasks for project\n"
                     "- Step 4: Use everhour_add_time with exact parameters\n"
                     "- Time format: 1h, 2h, 30m (examples: '2h', '1.5h', '30m')\n"
-                    "- Use today's date: 2025-06-15 (format: YYYY-MM-DD)\n"
+                    "- Use today's date in YYYY-MM-DD format\n"
                     "- Current known tasks in Inovação project (ev:273391483277215):\n"
                     "  * ev:273393148295192 (Terminar Livia 2.0)\n"
                     "  * ev:273447513319222 (Teste 1.0)\n\n"
@@ -639,20 +652,19 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
-                    "🗓️ **CRITICAL: Today is June 5, 2025**: Use 2025-06-05 as reference for 'today'\n"
                     "📅 **Search Strategy**:\n"
                     "- Try these tools in order: gcalendar_find_events, gcalendar_search_events, google_calendar_find_events\n"
                     "- Use start_date and end_date parameters in YYYY-MM-DD format\n"
-                    "- Default range: today to next 7 days (2025-06-05 to 2025-06-12)\n"
+                    "- Default range: today to next 7 days\n"
                     "- Timezone: America/Sao_Paulo\n"
-                    "- If no events found, try broader date range (2025-06-01 to 2025-06-30)\n\n"
+                    "- If no events found, try a broader date range\n\n"
                     "📋 **Response Format** (Portuguese):\n"
                     "📅 **Eventos no Google Calendar:**\n"
                     "1. **[Nome do Evento]**\n"
                     "   - 📅 Data: [data]\n"
                     "   - ⏰ Horário: [hora início] às [hora fim]\n"
                     "   - 🔗 Link: [link se disponível]\n\n"
-                    "⚠️ **IMPORTANT**: Always search with explicit date ranges in JUNE 2025!"
+                    "⚠️ **IMPORTANT**: Always search with explicit date ranges"
                 ),
                 tools=[
                     {
