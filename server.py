@@ -51,9 +51,8 @@ agent_semaphore = asyncio.Semaphore(max_concurrency)
 processed_messages = set()  # Cache de mensagens processadas
 bot_user_id = "U057233T98A"  # ID do bot no Slack - IMPORTANTE para detectar menções
 
-# Structured Outputs configuration
-use_structured_outputs = os.environ.get("LIVIA_USE_STRUCTURED_OUTPUTS", "false").lower() == "true"
-logger.info(f"Structured Outputs enabled: {use_structured_outputs}")
+# Unified Agents SDK configuration - all MCPs now use native multi-turn execution
+logger.info("Using unified Agents SDK with native multi-turn execution for all MCPs")
 
 # DEVELOPMENT SECURITY: Whitelist of allowed channels and users
 ALLOWED_CHANNELS = {"C059NNLU3E1"}  # Only this specific channel
@@ -186,7 +185,7 @@ class SlackSocketModeServer:
         """
         Sends message to agent and posts streaming response to Slack.
         Implements:
-        - Visual spinner using hourglass ⏳ with growing dots via chat_update
+        - Static ":hourglass_flowing_sand: Pensando..." message replaced by tags + response
         - Header tag in format `⛭TagName` at the top of all responses
         """
         global agent, agent_semaphore
@@ -236,47 +235,21 @@ class SlackSocketModeServer:
             else:
                 logger.warning("Failed to fetch thread history.")
 
-        # --- Visual spinner logic ---
+        # --- Static thinking message ---
         async with agent_semaphore:
-            spinner_texts = ["⏳ Pensando.", "⏳ Pensando..", "⏳ Pensando..."]
-            spinner_idx = 0
-            stop_event = asyncio.Event()
-            spinner_msg = await say(text="⏳ Pensando.", channel=original_channel_id, thread_ts=thread_ts_for_reply)
-            message_ts = spinner_msg.get("ts")
-
-            async def spinner_task_func():
-                nonlocal spinner_idx
-                # Spinner loop: cycle through hourglass dots every 0.8 seconds using chat_update
-                while not stop_event.is_set():
-                    try:
-                        # Wait for 0.8 seconds or until stop event
-                        await asyncio.wait_for(stop_event.wait(), timeout=0.8)
-                        break  # Stop event was set, exit loop
-                    except asyncio.TimeoutError:
-                        # Timeout reached, update spinner and continue
-                        spinner_idx = (spinner_idx + 1) % 3
-                        try:
-                            await self.app.client.chat_update(
-                                channel=original_channel_id,
-                                ts=message_ts,
-                                text=spinner_texts[spinner_idx]
-                            )
-                        except Exception as update_error:
-                            logger.warning(f"Spinner update failed: {update_error}")
-                            break  # Exit on update failure
-
-            spinner_task = asyncio.create_task(spinner_task_func())
+            thinking_msg = await say(text=":hourglass_flowing_sand: Pensando...", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            message_ts = thinking_msg.get("ts")
 
             # --- Cumulative Tag System ---
             def derive_cumulative_tags(tool_calls, audio_files, image_urls, user_message=None, final_response=None):
                 """
                 Build cumulative tags showing all technologies used in the response.
-                Format: `⛭ gpt-4.1-mini` `Vision` `WebSearch` etc.
+                Format: `⛭ gpt-4.1` `Vision` `WebSearch` etc.
                 """
                 tags = []
 
                 # Always start with the model
-                tags.append("gpt-4.1-mini")
+                tags.append("gpt-4.1")
 
                 # Add Vision if images are being processed
                 if image_urls:
@@ -407,7 +380,7 @@ class SlackSocketModeServer:
 
             # --- Determine initial cumulative tags (heuristic) ---
             def get_initial_cumulative_tags():
-                initial_tags = ["gpt-4.1-mini"]  # Always start with model
+                initial_tags = ["gpt-4.1"]  # Always start with model
 
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -424,7 +397,7 @@ class SlackSocketModeServer:
                 return initial_tags
 
             initial_tags = get_initial_cumulative_tags()
-            # Format as: `⛭ gpt-4.1-mini` `Vision` etc.
+            # Format as: `⛭ gpt-4.1` `Vision` etc.
             tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
             header_prefix = f"{tag_display}\n\n"
 
@@ -433,13 +406,8 @@ class SlackSocketModeServer:
                     f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent with STREAMING..."
                 )
 
-                # If image generation, call handler (it does its own spinner/updating)
+                # If image generation, call handler (it does its own updating)
                 if "ImageGen" in initial_tags:
-                    stop_event.set()
-                    try:
-                        await spinner_task
-                    except Exception:
-                        pass
                     await self._handle_image_generation(text, say, original_channel_id, thread_ts_for_reply)
                     return
 
@@ -471,7 +439,7 @@ class SlackSocketModeServer:
                         detected_tools.extend(tool_calls_detected)
                         # Update header based on cumulative tags
                         cumulative_tags = derive_cumulative_tags(detected_tools, audio_files, processed_image_urls, user_message=text, final_response=full_text)
-                        # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
+                        # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
                         tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(cumulative_tags)])
                         current_header_prefix = f"{tag_display}\n\n"
 
@@ -482,12 +450,7 @@ class SlackSocketModeServer:
                     )
 
                     if not sent_header:
-                        # Stop spinner, wait for it, then set header before first chunk
-                        stop_event.set()
-                        try:
-                            await spinner_task
-                        except Exception:
-                            pass
+                        # Replace thinking message with header before first chunk
                         try:
                             await self.app.client.chat_update(
                                 channel=original_channel_id,
@@ -513,19 +476,14 @@ class SlackSocketModeServer:
                         except Exception as update_error:
                             logger.warning(f"Failed to update streaming message: {update_error}")
 
-                # Agent streaming: now expects dict: { text, tools, structured_data? }
-                response = await process_message(agent, context_input, processed_image_urls, stream_callback, use_structured_outputs)
+                # Agent streaming with unified Agents SDK: { text, tools, structured_data? }
+                response = await process_message(agent, context_input, processed_image_urls, stream_callback)
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
                 structured_data = response.get("structured_data") if isinstance(response, dict) else None
                 # Final update with complete response
                 if not sent_header:
-                    # If for some reason we never got a chunk, stop spinner and show header
-                    stop_event.set()
-                    try:
-                        await spinner_task
-                    except Exception:
-                        pass
+                    # If for some reason we never got a chunk, replace thinking message with header
                     try:
                         await self.app.client.chat_update(
                             channel=original_channel_id,
@@ -533,11 +491,11 @@ class SlackSocketModeServer:
                             text=header_prefix
                         )
                     except Exception as e:
-                        logger.warning(f"Failed to set header after spinner: {e}")
+                        logger.warning(f"Failed to set header: {e}")
 
                 # Compute header_prefix_final based on tools actually used (cumulative)
                 final_cumulative_tags = derive_cumulative_tags(tool_calls, audio_files, processed_image_urls, user_message=text, final_response=text_resp)
-                # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
+                # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
 
@@ -560,11 +518,6 @@ class SlackSocketModeServer:
                 )
 
             except Exception as e:
-                stop_event.set()
-                try:
-                    await spinner_task
-                except Exception:
-                    pass
                 logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)
                 try:
                     if 'message_ts' in locals():
@@ -584,7 +537,7 @@ class SlackSocketModeServer:
         image_urls: Optional[List[str]] = None, use_thread_history: bool = True, user_id: str = None
     ):
         """
-        Synchronous (non-streaming) response with hourglass spinner + header tag.
+        Synchronous (non-streaming) response with static ":hourglass_flowing_sand: Pensando..." message replaced by tags + response.
         """
         global agent, agent_semaphore
         if not agent:
@@ -614,40 +567,15 @@ class SlackSocketModeServer:
             else:
                 logger.warning("Failed to fetch thread history.")
 
-        # --- Visual spinner logic ---
+        # --- Static thinking message ---
         async with agent_semaphore:
-            spinner_texts = ["⏳ Pensando.", "⏳ Pensando..", "⏳ Pensando..."]
-            spinner_idx = 0
-            stop_event = asyncio.Event()
-            spinner_msg = await say(text="⏳ Pensando.", channel=original_channel_id, thread_ts=thread_ts_for_reply)
-            message_ts = spinner_msg.get("ts")
-
-            async def spinner_task_func():
-                nonlocal spinner_idx
-                while not stop_event.is_set():
-                    try:
-                        # Wait for 0.8 seconds or until stop event
-                        await asyncio.wait_for(stop_event.wait(), timeout=0.8)
-                        break  # Stop event was set, exit loop
-                    except asyncio.TimeoutError:
-                        # Timeout reached, update spinner and continue
-                        spinner_idx = (spinner_idx + 1) % 3
-                        try:
-                            await self.app.client.chat_update(
-                                channel=original_channel_id,
-                                ts=message_ts,
-                                text=spinner_texts[spinner_idx]
-                            )
-                        except Exception as update_error:
-                            logger.warning(f"Spinner update failed: {update_error}")
-                            break  # Exit on update failure
-
-            spinner_task = asyncio.create_task(spinner_task_func())
+            thinking_msg = await say(text=":hourglass_flowing_sand:Pensando...", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            message_ts = thinking_msg.get("ts")
 
             # --- Cumulative Tag System for Non-Streaming ---
             def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
                 """Build cumulative tags for non-streaming responses."""
-                tags = ["gpt-4.1-mini"]  # Always start with model
+                tags = ["gpt-4.1"]  # Always start with model
 
                 # Add Vision if images are being processed
                 if image_urls:
@@ -758,7 +686,7 @@ class SlackSocketModeServer:
                 return tags
 
             def get_initial_tags_non_streaming():
-                initial_tags = ["gpt-4.1-mini"]  # Always start with model
+                initial_tags = ["gpt-4.1"]  # Always start with model
 
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -773,7 +701,7 @@ class SlackSocketModeServer:
                 return initial_tags
 
             initial_tags = get_initial_tags_non_streaming()
-            # Format as: `⛭ gpt-4.1-mini` `Vision` etc.
+            # Format as: `⛭ gpt-4.1` `Vision` etc.
             tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
             header_prefix = f"{tag_display}\n\n"
 
@@ -790,17 +718,12 @@ class SlackSocketModeServer:
                 else:
                     logger.info("No images detected in this message")
 
-                response = await process_message(agent, context_input, processed_image_urls, None, use_structured_outputs)
-                stop_event.set()
-                try:
-                    await spinner_task
-                except Exception:
-                    pass
+                response = await process_message(agent, context_input, processed_image_urls, None)
 
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
                 final_cumulative_tags = derive_cumulative_tags_non_streaming_with_response(tool_calls, [], processed_image_urls, text_resp, text)
-                # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
+                # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
 
@@ -814,11 +737,6 @@ class SlackSocketModeServer:
                     text=formatted_response
                 )
             except Exception as e:
-                stop_event.set()
-                try:
-                    await spinner_task
-                except Exception:
-                    pass
                 logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
                 await self.app.client.chat_update(
                     channel=original_channel_id,

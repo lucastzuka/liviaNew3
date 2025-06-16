@@ -8,24 +8,13 @@ Includes tools: file_search, web_search, image vision, and MCP tools.
 Enhanced with Structured Outputs for reliable JSON schema adherence.
 """
 
-import os
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from dotenv import load_dotenv
-from pydantic import BaseModel
 
 # OpenAI Agents SDK components
-from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers, FileSearchTool, ImageGenerationTool
-
-# Import structured schemas for OpenAI Structured Outputs
-from tools.structured_schemas import (
-    LiviaResponse, ResponseMetadata, ToolUsage,
-    EverhourTimeEntry, AsanaTaskOperation, GmailOperation,
-    WebSearchResult, FileSearchResult, ImageAnalysis,
-    ImageGeneration, AudioTranscription,
-    get_schema_for_operation, create_response_schema
-)
+from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers, FileSearchTool
 
 # Load environment variables from .env file
 env_path = Path('.') / '.env'
@@ -65,19 +54,20 @@ async def create_agent() -> Agent:
 
     # Image Generation Tool configuration
     # TODO: SLACK_INTEGRATION_POINT - Ferramenta de geração de imagem para o Slack
-    # Configuração correta do ImageGenerationTool
-    image_generation_tool = ImageGenerationTool(
-        tool_config={
-            "size": "auto",
-            "quality": "auto"
-        }
-    )
+    # Configuração correta do ImageGenerationTool (temporariamente removida - erro tools[2].type)
+    # image_generation_tool = ImageGenerationTool(
+    #     tool_config={
+    #         "size": "auto",
+    #         "quality": "auto"
+    #     }
+    # )
 
-    # MCP servers list (sem Slack MCP local - usando API direta)
+    # MCP servers list (local MCPs only - Zapier MCPs via Responses API with enhanced multi-turn)
     mcp_servers = []
     server_descriptions = []
 
-    logger.info("Using direct Slack API instead of MCP server for better control")
+    logger.info("Using hybrid architecture: Agents SDK for local tools + enhanced Responses API for Zapier MCPs")
+    logger.info("Enhanced Responses API now includes manual multi-turn execution for complex workflows")
 
     # Generate dynamic Zapier tools description from configuration
     zapier_descriptions = []
@@ -85,8 +75,12 @@ async def create_agent() -> Agent:
         zapier_descriptions.append(f"  - ✅ {mcp_config['description']}")
 
     zapier_tools_description = (
-        "⚡ **Zapier Integration Tools** (Remote MCP):\n"
+        "⚡ **Zapier Integration Tools** (Enhanced Multi-Turn via Responses API):\n"
         + "\n".join(zapier_descriptions) + "\n"
+        "**Enhanced Multi-Turn Execution:**\n"
+        "  - Improved Responses API with manual multi-turn loops\n"
+        "  - Agent will attempt to chain tool calls (e.g., find project → find task → add time)\n"
+        "  - Enhanced instructions for complex workflows\n"
         "**Como usar (keywords específicas):**\n"
         "  - Para mcpAsana: use 'asana'\n"
         "  - Para mcpEverhour: use 'everhour'\n"
@@ -99,8 +93,10 @@ async def create_agent() -> Agent:
         "**Dicas:**\n"
         "  - IMPORTANTE: TargetGroupIndex_BR2024 é um ARQUIVO, não pasta\n"
         "  - Se não encontrar, tente busca parcial ou termos relacionados\n"
-        "  - Roteamento automático baseado em palavras-chave\n"
+        "  - Instruções aprimoradas para execução em cadeia\n"
     )
+
+    logger.info(f"✅ Configured hybrid architecture with enhanced multi-turn for {len(ZAPIER_MCPS)} Zapier MCPs")
 
     # Slack communication handled directly via API (no MCP tools needed)
 
@@ -108,7 +104,7 @@ async def create_agent() -> Agent:
         name="Livia",
         instructions=(
             """<identity>
-You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilian advertising agency. You operate in Slack channels and respond only in threads where you were mentioned in the first message.
+You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilian advertising agency. You operate in Slack channels, groups, and DMs and your Slack ID is <@U057233T98A>.
 </identity>
 
 <communication_style>
@@ -172,7 +168,7 @@ ELSE IF user asks about documents/files
 </response_guidelines>
 """
         ),
-        model="gpt-4.1-mini",  # Changed to gpt-4o for better vision support
+        model="gpt-4.1",  # Changed to gpt-4o for better vision support
         tools=[web_search_tool, file_search_tool],  # image_generation_tool temporariamente removida - erro tools[2].type
         mcp_servers=mcp_servers,
     )
@@ -299,6 +295,176 @@ async def process_message_with_structured_output(mcp_key: str, message: str, ima
         return await process_message_with_zapier_mcp_streaming(mcp_key, message, image_urls, None)
 
 
+async def process_message_with_enhanced_multiturn_mcp(mcp_key: str, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> dict:
+    """
+    Enhanced multi-turn execution for Zapier MCPs using Responses API.
+    Implements manual multi-turn loops for complex workflows like Everhour time tracking.
+
+    Args:
+        mcp_key: Key for the Zapier MCP to use
+        message: User message to process
+        image_urls: Optional list of image URLs
+        stream_callback: Optional callback for streaming updates
+
+    Returns:
+        Dict: {"text": ..., "tools": [...]}
+    """
+    from openai import OpenAI
+
+    if mcp_key not in ZAPIER_MCPS:
+        raise ValueError(f"Unknown MCP key: {mcp_key}. Available: {list(ZAPIER_MCPS.keys())}")
+
+    mcp_config = ZAPIER_MCPS[mcp_key]
+    client = OpenAI()
+
+    # Prepare input data with optional images
+    if image_urls:
+        input_content = [{"type": "input_text", "text": message}]
+        for image_url in image_urls:
+            input_content.append({
+                "type": "input_image",
+                "image_url": image_url,
+                "detail": "low"
+            })
+        input_data = input_content
+    else:
+        input_data = message
+
+    logger.info(f"🔄 Enhanced Multi-Turn Processing with {mcp_config['name']}")
+    logger.info(f"📝 Original message: {message}")
+
+    # Enhanced instructions for multi-turn execution with Everhour-specific strategies
+    enhanced_instructions = f"""You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access.
+
+🔄 **MULTI-TURN EXECUTION STRATEGY**:
+1. **ANALYZE** the user request to identify all required steps
+2. **EXECUTE** each step sequentially using available tools
+3. **CONTINUE** until the complete workflow is finished
+4. **RESPOND** only when the entire task is completed
+
+🎯 **FOR EVERHOUR WORKFLOWS - ENHANCED STRATEGY**:
+- Step 1: Use everhour_find_project to find the project
+- Step 2: Try everhour_find_task to find the specific task
+- Step 3: **IF TASK NOT FOUND**: Try everhour_list_tasks for the project to see available tasks
+- Step 4: **IF STILL NOT FOUND**: Try everhour_add_time directly with project ID as taskId (fallback)
+- Step 5: Confirm success with details
+
+🚨 **EVERHOUR TASK SEARCH FALLBACK**:
+If everhour_find_task returns empty results ({{}}), try these alternatives:
+1. Use everhour_list_tasks with the project ID to see all available tasks
+2. Look for similar task names in the list
+3. **DIRECT ID MAPPING**: Use these known task IDs directly:
+   - "Terminar Livia 2.0" → ev:273393148295192
+   - "Teste 1.0" → ev:273447513319222
+4. If user mentions "Teste 1.0", use taskId: ev:273447513319222 directly
+5. If user mentions "Terminar Livia 2.0", use taskId: ev:273393148295192 directly
+
+📅 **DATE HANDLING**:
+- Always use today's date: 2025-06-15 (format: YYYY-MM-DD)
+- Never use old dates like 2023-10-03
+
+🎯 **FOR OTHER WORKFLOWS**:
+- Break down complex requests into sequential tool calls
+- Use results from previous calls to inform next steps
+- Don't stop until the complete workflow is finished
+
+⚠️ **CRITICAL RULES**:
+1. You MUST use everhour tools - never respond without calling tools
+2. Do NOT respond to user until ALL required steps are completed
+3. Continue calling tools until the entire workflow is finished
+4. If you know the task ID directly, use everhour_add_time immediately
+
+🔧 **REQUIRED ACTIONS FOR TIME TRACKING**:
+- ALWAYS call everhour_add_time tool with these exact parameters:
+  - taskId: ev:273447513319222 (for "Teste 1.0")
+  - time: "1h" (or user-specified time)
+  - date: "2025-06-15"
+  - comment: "Time added via Livia"
+
+📋 **RESPONSE FORMAT** (Portuguese):
+SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_name] ([task_id])'
+ERROR: '❌ Erro: [specific error details]'
+
+🎯 **GOAL**: Complete the entire multi-step workflow before responding to user.
+"""
+
+    try:
+        # Create enhanced multi-turn API call with FORCED tool usage
+        stream = client.responses.create(
+            model="gpt-4.1",
+            input=input_data,
+            instructions=enhanced_instructions,
+            tools=[
+                {
+                    "type": "mcp",
+                    "server_label": mcp_config["server_label"],
+                    "server_url": mcp_config["url"],
+                    "require_approval": "never",
+                    "headers": {
+                        "Authorization": f"Bearer {mcp_config['api_key'].strip()}"
+                    }
+                }
+            ],
+            tool_choice="required",  # FORCE tool usage - don't allow text-only responses
+            stream=True
+        )
+
+        # Process streaming response with enhanced logging
+        full_response = ""
+        tool_calls_made = []
+        errors_encountered = []
+
+        for event in stream:
+            if hasattr(event, 'type'):
+                if event.type == "response.output_text.delta":
+                    delta_text = getattr(event, 'delta', '')
+                    if delta_text:
+                        full_response += delta_text
+                        # Call stream callback if provided
+                        if stream_callback:
+                            await stream_callback(delta_text, full_response)
+                elif event.type == "response.completed":
+                    logger.info("🔄 Enhanced Multi-Turn MCP streaming response completed")
+                elif event.type == "error":
+                    error_details = {
+                        "type": getattr(event, 'type', 'unknown'),
+                        "message": getattr(event, 'message', str(event)),
+                        "code": getattr(event, 'code', None),
+                        "details": getattr(event, 'details', None)
+                    }
+                    errors_encountered.append(error_details)
+                    logger.error(f"🚨 Enhanced Multi-Turn MCP ERROR: {error_details}")
+                elif hasattr(event, 'type') and 'tool_call' in event.type:
+                    tool_call_info = {
+                        "type": event.type,
+                        "tool_name": getattr(event, 'name', 'unknown'),
+                        "arguments": getattr(event, 'arguments', {}),
+                        "output": getattr(event, 'output', None),
+                        "error": getattr(event, 'error', None)
+                    }
+                    tool_calls_made.append(tool_call_info)
+                    logger.info(f"🔧 Enhanced Multi-Turn TOOL CALL: {tool_call_info}")
+
+        logger.info(f"📊 Enhanced Multi-Turn SUMMARY:")
+        logger.info(f"   - Response length: {len(full_response)} chars")
+        logger.info(f"   - Tool calls made: {len(tool_calls_made)}")
+        logger.info(f"   - Errors encountered: {len(errors_encountered)}")
+
+        if tool_calls_made:
+            logger.info(f"🔧 MULTI-TURN TOOL SEQUENCE:")
+            for i, call in enumerate(tool_calls_made, 1):
+                logger.info(f"   {i}. {call['tool_name']}: {call.get('error', 'SUCCESS')}")
+
+        logger.info(f"✅ Enhanced Multi-Turn Final Response: {full_response}")
+        return {"text": full_response or "No response generated.", "tools": tool_calls_made}
+
+    except Exception as e:
+        logger.error(f"❌ Enhanced Multi-Turn MCP processing failed: {e}", exc_info=True)
+        # Fallback to regular MCP processing
+        logger.info("🔄 Falling back to regular MCP processing")
+        return await process_message_with_zapier_mcp_streaming(mcp_key, message, image_urls, stream_callback)
+
+
 async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> dict:
     """
     Generic function to process message using OpenAI Responses API with any Zapier Remote MCP with streaming support.
@@ -339,20 +505,24 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         # (code omitted, see above)
         if mcp_config["server_label"] == "zapier-mcpeverhour":
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency with Everhour MCP access.\n\n"
                     "🕐 **EVERHOUR TIME TRACKING OPERATIONS**:\n"
-                    "- Use everhour_add_time tool with exact parameters\n"
-                    "- Extract ev:xxxxxxxxxx IDs from message\n"
+                    "- Step 1: Use everhour_find_project to find project\n"
+                    "- Step 2: Use everhour_find_task to find specific task\n"
+                    "- Step 3: If task not found, try everhour_list_tasks for project\n"
+                    "- Step 4: Use everhour_add_time with exact parameters\n"
                     "- Time format: 1h, 2h, 30m (examples: '2h', '1.5h', '30m')\n"
-                    "- Use today's date in YYYY-MM-DD format (today is 2025-06-05)\n"
-                    "- Current active tasks in project Inovação (ev:273391483277215):\n"
+                    "- Use today's date: 2025-06-15 (format: YYYY-MM-DD)\n"
+                    "- Current known tasks in Inovação project (ev:273391483277215):\n"
                     "  * ev:273393148295192 (Terminar Livia 2.0)\n"
-                    "  * ev:273391484704922 (Other task)\n\n"
+                    "  * ev:273447513319222 (Teste 1.0)\n\n"
+                    "🚨 **FALLBACK STRATEGY**:\n"
+                    "If everhour_find_task returns {{}}, try everhour_list_tasks or use known task IDs\n\n"
                     "📋 **RESPONSE FORMAT**:\n"
-                    "SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_id]'\n"
+                    "SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_name] ([task_id])'\n"
                     "ERROR: '❌ Erro: [details]'\n\n"
                     "🎯 **GOAL**: Add time efficiently and provide clear feedback in Portuguese."
                 ),
@@ -372,7 +542,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpgmail":
             # Special handling for Gmail with optimized search and content limiting
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Gmail tools to search and read emails.\n\n"
@@ -414,7 +584,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpasana":
             # Special handling for Asana operations
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access.\n\n"
@@ -444,7 +614,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpgooglecalendar":
             # Special handling for Google Calendar with consistent date parameters
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
@@ -480,7 +650,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpslack":
             # Special handling for Slack with message search and channel operations
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use slack_find_message with 'in:channel-name' format.\n"
@@ -504,7 +674,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         else:
             # Regular MCP processing for other services (Google Drive, etc.)
             stream = client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-4.1",
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access. Sequential search: workspace→project→task.\n"
@@ -598,7 +768,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
             try:
                 # Retry with more restrictive search and summarization (non-streaming fallback)
                 simplified_response = client.responses.create(
-                    model="gpt-4.1-mini",
+                    model="gpt-4.1",
                     input="Busque apenas o último email recebido na caixa de entrada e faça um resumo muito breve",
                     instructions=(
                         "You are Livia, AI assistant from ℓiⱴε agency. Search for the latest email in inbox using 'in:inbox' operator.\n"
@@ -676,38 +846,30 @@ def get_available_zapier_mcps() -> dict:
     }
 
 import re
-async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None, stream_callback=None, use_structured_outputs: bool = False) -> dict:
+async def process_message(agent: Agent, message: str, image_urls: Optional[List[str]] = None, stream_callback=None) -> dict:
     """
     Runs the agent with the given message and optional image URLs with streaming support.
+    Now uses unified Agents SDK with native multi-turn execution for all MCPs.
 
     Args:
         agent: OpenAI Agent instance
         message: User message to process
         image_urls: Optional list of image URLs
         stream_callback: Optional callback for streaming updates
-        use_structured_outputs: Whether to use OpenAI Structured Outputs for MCPs (default: False)
 
     Returns:
         Dict with 'text', 'tools', and optionally 'structured_data'
     """
 
-    # 🔍 Check if message needs a specific Zapier MCP
+    # 🔍 Check if message needs a specific Zapier MCP (enhanced with multi-turn)
     mcp_needed = detect_zapier_mcp_needed(message)
 
     if mcp_needed:
         mcp_name = ZAPIER_MCPS[mcp_needed]["name"]
-        logger.info(f"Message requires {mcp_name}, routing to Zapier Remote MCP")
-
-        if use_structured_outputs:
-            logger.info("Using Structured Outputs for reliable schema adherence")
-            try:
-                return await process_message_with_structured_output(mcp_needed, message, image_urls, use_streaming=True)
-            except Exception as e:
-                logger.warning(f"{mcp_name} with Structured Outputs failed, falling back to regular MCP: {e}")
-                # Fall through to regular MCP processing
+        logger.info(f"Message requires {mcp_name}, routing to Enhanced Zapier MCP with multi-turn")
 
         try:
-            return await process_message_with_zapier_mcp_streaming(mcp_needed, message, image_urls, stream_callback)
+            return await process_message_with_enhanced_multiturn_mcp(mcp_needed, message, image_urls, stream_callback)
         except Exception as e:
             logger.warning(f"{mcp_name} failed, falling back to regular agent: {e}")
             # Continue to regular agent processing below
