@@ -30,7 +30,7 @@ ZAPIER_MCPS = {
     "mcpGmail": {
         "name": "Zapier mcpGmail",
         "url": "https://mcp.zapier.com/api/mcp/s/8b25ee8b-7f8b-4f41-b985-917a168c87b4/mcp",
-        "api_key": "OGIyNWVlOGItN2Y4Yi00ZjQxLWI5ODUtOTE3YTE2OGM4N2I0OmE5NDgzMzY2LTVlYTMtNDliNS04NjQ2LWQ5YmJiMGI2NWJmZg==",
+        "api_key": "sk-or-v1-8b25ee8b7f8b4f41b985917a168c87b4",
         "server_label": "zapier-mcpgmail",
         "keywords": ["gmail"],
         "priority": 3,
@@ -38,8 +38,8 @@ ZAPIER_MCPS = {
     },
     "mcpAsana": {
         "name": "Zapier mcpAsana",
-        "url": "https://mcp.zapier.com/api/mcp/s/cdd634f5-9842-41eb-8847-d5916e001ade/mcp",
-        "api_key": "Y2RkNjM0ZjUtOTg0Mi00MWViLTg4NDctZDU5MTZlMDAxYWRlOmMxNmMxNjk0LTViYzMtNDViMC04MjI5LWFlYmUzYTVlZmEzMw==",
+        "url": "https://mcp.zapier.com/api/mcp/s/c123456d-7890-1234-5678-901234567890/mcp",
+        "api_key": "sk-or-v1-c123456d789012345678901234567890",
         "server_label": "zapier-mcpasana",
         "keywords": ["asana"],
         "priority": 4,
@@ -47,8 +47,8 @@ ZAPIER_MCPS = {
     },
     "mcpGoogleCalendar": {
         "name": "Zapier mcpGoogleCalendar",
-        "url": "https://mcp.zapier.com/api/mcp/s/fe3bee78-5a79-4bee-9ab5-1ab70068db39/mcp",
-        "api_key": "ZmUzYmVlNzgtNWE3OS00YmVlLTlhYjUtMWFiNzAwNjhkYjM5Ojk3YWE4NWFiLWE2ZDAtNGMyNS05NTdkLTFjMTllMDE1OTgzZg==",
+        "url": "https://mcp.zapier.com/api/mcp/s/d234567e-8901-2345-6789-012345678901/mcp",
+        "api_key": "sk-or-v1-d234567e890123456789012345678901",
         "server_label": "zapier-mcpgooglecalendar",
         "keywords": ["calendar"],
         "priority": 5,
@@ -65,8 +65,8 @@ ZAPIER_MCPS = {
     },
     "mcpGoogleSheets": {
         "name": "Zapier mcpGoogleSheets",
-        "url": "https://mcp.zapier.com/api/mcp/s/401a7b31-986b-43cc-87d3-3e249be5c095/mcp",
-        "api_key": "NDAxYTdiMzEtOTg2Yi00M2NjLTg3ZDMtM2UyNDliZTVjMDk1OjgwMzRmNTg4LWFkYWMtNGVkYy05NGE0LWQ2YjI5ZmNhYzI0Yw==",
+        "url": "https://mcp.zapier.com/api/mcp/s/f456789g-0123-4567-8901-234567890123/mcp",
+        "api_key": "sk-or-v1-f456789g012345678901234567890123",
         "server_label": "zapier-mcpgooglesheets",
         "keywords": ["sheets"],
         "priority": 7,
@@ -74,12 +74,12 @@ ZAPIER_MCPS = {
     },
     "mcpSlack": {
         "name": "Zapier mcpSlack",
-        "url": "https://mcp.zapier.com/api/mcp/s/4df0a3db-32f5-458c-94e0-1553028ad4be/mcp",
-        "api_key": "NGRmMGEzZGItMzJmNS00NThjLTk0ZTAtMTU1MzAyOGFkNGJlOjk5ZmNmMjc0LWI1MjEtNDI3OC1iZTI1LWE4ZDAxZDliNDNiZg==",
+        "url": "https://mcp.zapier.com/api/mcp/s/g567890h-1234-5678-9012-345678901234/mcp",
+        "api_key": "sk-or-v1-g567890h123456789012345678901234",
         "server_label": "zapier-mcpslack",
         "keywords": ["slack"],
         "priority": 8,
-        "description": "💬 **mcpSlack**: se comunicar com o slack"
+        "description": "💬 **mcpSlack**: enviar mensagens para outros workspaces"
     }
 }
 

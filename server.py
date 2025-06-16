@@ -449,44 +449,10 @@ class SlackSocketModeServer:
                 import time
                 last_update_time = time.time()
 
-                # Circuit breaker variables for infinite loop protection
-                stream_start_time = time.time()
-                max_stream_duration = 120  # 2 minutes max
-                max_response_length = 8000  # Max characters to prevent infinite responses
-                update_count = 0
-                max_updates = 200  # Max number of updates to prevent infinite loops
-
                 async def stream_callback(delta_text: str, full_text: str, tool_calls_detected=None):
-                    nonlocal current_text_only, last_update_length, last_update_time, sent_header, detected_tools, current_header_prefix, update_count
-
-                    # Circuit breaker: Check for infinite loop conditions
-                    current_time = time.time()
-                    stream_duration = current_time - stream_start_time
-                    update_count += 1
-
-                    # Protection against infinite loops
-                    if stream_duration > max_stream_duration:
-                        logger.error(f"🚨 CIRCUIT BREAKER: Stream timeout after {stream_duration:.1f}s - stopping to prevent infinite loop")
-                        return
-
-                    if len(full_text) > max_response_length:
-                        logger.error(f"🚨 CIRCUIT BREAKER: Response too long ({len(full_text)} chars) - stopping to prevent infinite loop")
-                        return
-
-                    if update_count > max_updates:
-                        logger.error(f"🚨 CIRCUIT BREAKER: Too many updates ({update_count}) - stopping to prevent infinite loop")
-                        return
-
-                    # Check for repetitive content (potential loop indicator)
-                    if full_text and len(full_text) > 100:
-                        # Check if the last 50 characters are being repeated
-                        text_end = full_text[-50:]
-                        text_before_end = full_text[-150:-50] if len(full_text) > 150 else ""
-                        if text_end in text_before_end:
-                            logger.error(f"🚨 CIRCUIT BREAKER: Repetitive content detected - stopping to prevent infinite loop")
-                            return
-
+                    nonlocal current_text_only, last_update_length, last_update_time, sent_header, detected_tools, current_header_prefix
                     current_text_only = full_text
+                    current_time = time.time()
 
                     # Update detected tools if provided
                     if tool_calls_detected:
@@ -600,11 +566,6 @@ class SlackSocketModeServer:
                         await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
                 except:
                     await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
-            finally:
-                # Clean up processing protection
-                if hasattr(self, '_active_processing'):
-                    processing_key = f"{original_channel_id}_{thread_ts_for_reply}_{user_id}"
-                    self._active_processing.discard(processing_key)
 
     # --- Message Processing & Response Method ---
     async def _process_and_respond(
@@ -624,35 +585,12 @@ class SlackSocketModeServer:
         if not await is_channel_allowed(channel_id, user_id or "unknown", self.app.client):
             return
 
-        # Enhanced bot response detection to prevent infinite loops
-        bot_response_patterns = [
+        if text and any(phrase in text.lower() for phrase in [
             "encontrei o arquivo", "você pode acessá-lo", "estou à disposição",
-            "não consegui encontrar", "vou procurar", "aqui está",
-            "hoje é segunda-feira", "hoje é terça-feira", "hoje é quarta-feira",
-            "hoje é quinta-feira", "hoje é sexta-feira", "hoje é sábado", "hoje é domingo",
-            "corpus christi", "ponto facultativo", "feriados.inf.br",
-            "⛭ gpt-", "websearch", "vision", "imageGen", "mcpgmail", "mcpeverhour"
-        ]
-
-        if text and any(phrase in text.lower() for phrase in bot_response_patterns):
-            logger.info("Detected bot's own response pattern, skipping processing to prevent loop")
+            "não consegui encontrar", "vou procurar", "aqui está"
+        ]):
+            logger.info("Detected bot's own response pattern, skipping processing")
             return
-
-        # Additional protection: Check for repetitive content that might indicate a loop
-        if text and len(text) > 50:
-            # Check if the message contains repetitive patterns
-            words = text.lower().split()
-            if len(words) > 10:
-                # Check for repeated phrases (potential loop indicator)
-                word_counts = {}
-                for word in words:
-                    word_counts[word] = word_counts.get(word, 0) + 1
-
-                # If any word appears more than 30% of the time, it might be a loop
-                max_word_frequency = max(word_counts.values()) if word_counts else 0
-                if max_word_frequency > len(words) * 0.3:
-                    logger.warning(f"🚨 LOOP PROTECTION: Detected repetitive content, skipping to prevent infinite loop")
-                    return
 
         context_input = text
 
@@ -667,153 +605,143 @@ class SlackSocketModeServer:
 
         # --- Static thinking message ---
         async with agent_semaphore:
-            # Additional protection: Check if we're already processing something similar
-            processing_key = f"{original_channel_id}_{thread_ts_for_reply}_{user_id}"
-            if hasattr(self, '_active_processing') and processing_key in self._active_processing:
-                logger.warning(f"🚨 DUPLICATE PROTECTION: Already processing request for {processing_key}, skipping")
-                return
+            thinking_msg = await say(text=":hourglass_flowing_sand:Pensando...", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+            message_ts = thinking_msg.get("ts")
 
-            # Mark as processing
-            if not hasattr(self, '_active_processing'):
-                self._active_processing = set()
-            self._active_processing.add(processing_key)
+            # --- Cumulative Tag System for Non-Streaming ---
+            def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
+                """Build cumulative tags for non-streaming responses."""
+                tags = ["gpt-4.1"]  # Always start with model
+
+                # Add Vision if images are being processed
+                if image_urls:
+                    tags.append("Vision")
+
+                # Add AudioTranscribe if audio files are present
+                if audio_files:
+                    tags.append("AudioTranscribe")
+
+                # Add tools based on tool calls
+                if tool_calls:
+                    for call in tool_calls:
+                        name = call.get("tool_name", call.get("name", "")).lower()
+                        tool_type = call.get("tool_type", "").lower()
+
+                        # Web Search detection
+                        if "web_search" in name or "web_search" in tool_type:
+                            if "WebSearch" not in tags:
+                                tags.append("WebSearch")
+
+                        # Image Generation detection
+                        elif name == "image_generation_tool" or tool_type == "image_generation_tool":
+                            if "ImageGen" not in tags:
+                                tags.append("ImageGen")
+
+                        # MCP detection
+                        elif "mcp" in name or "mcp" in tool_type:
+                            # Extract MCP service name
+                            if "everhour" in name or "everhour" in tool_type:
+                                if "McpEverhour" not in tags:
+                                    tags.append("McpEverhour")
+                            elif "asana" in name or "asana" in tool_type:
+                                if "McpAsana" not in tags:
+                                    tags.append("McpAsana")
+                            elif "gmail" in name or "gmail" in tool_type:
+                                if "McpGmail" not in tags:
+                                    tags.append("McpGmail")
+                            elif "google" in name or "drive" in name or "gdrive" in name:
+                                if "McpGoogleDrive" not in tags:
+                                    tags.append("McpGoogleDrive")
+                            elif "calendar" in name:
+                                if "McpGoogleCalendar" not in tags:
+                                    tags.append("McpGoogleCalendar")
+                            elif "docs" in name:
+                                if "McpGoogleDocs" not in tags:
+                                    tags.append("McpGoogleDocs")
+                            elif "sheets" in name:
+                                if "McpGoogleSheets" not in tags:
+                                    tags.append("McpGoogleSheets")
+                            elif "slack" in name:
+                                if "McpSlack" not in tags:
+                                    tags.append("McpSlack")
+
+                return tags
+
+            def derive_cumulative_tags_non_streaming_with_response(tool_calls, audio_files, image_urls, final_response=None, user_message=None):
+                """Build cumulative tags for non-streaming responses with response analysis."""
+                tags = derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls)
+
+                # Enhanced detection: Check if MCP was used based on response content and user message
+                if final_response or user_message:
+                    response_content = (final_response or "").lower()
+                    message_content = (user_message or "").lower()
+                    combined_content = response_content + " " + message_content
+
+                    # Google Drive MCP indicators
+                    drive_indicators = ["google drive", "my drive", "drive.google.com", "arquivo encontrado", "pasta encontrada", "gdrive", "livia.png", "id:", "drive da live"]
+                    if any(indicator in combined_content for indicator in drive_indicators):
+                        if "McpGoogleDrive" not in tags:
+                            tags.append("McpGoogleDrive")
+
+                    # Everhour MCP indicators (specific keyword only)
+                    everhour_indicators = ["everhour", "tempo adicionado", "task ev:", "ev:"]
+                    if any(indicator in combined_content for indicator in everhour_indicators):
+                        if "McpEverhour" not in tags:
+                            tags.append("McpEverhour")
+
+                    # Asana MCP indicators (specific keyword only)
+                    asana_indicators = ["asana"]
+                    if any(indicator in combined_content for indicator in asana_indicators):
+                        if "McpAsana" not in tags:
+                            tags.append("McpAsana")
+
+                    # Gmail MCP indicators (specific keyword only)
+                    gmail_indicators = ["gmail"]
+                    if any(indicator in combined_content for indicator in gmail_indicators):
+                        if "McpGmail" not in tags:
+                            tags.append("McpGmail")
+
+                    # Google Docs MCP indicators
+                    docs_indicators = ["google docs", "documento", "docs", "live_codigodeeticaeconduta"]
+                    if any(indicator in combined_content for indicator in docs_indicators):
+                        if "McpGoogleDocs" not in tags:
+                            tags.append("McpGoogleDocs")
+
+                    # Google Calendar MCP indicators
+                    calendar_indicators = ["calendar", "calendario", "agenda", "evento", "reunião"]
+                    if any(indicator in combined_content for indicator in calendar_indicators):
+                        if "McpGoogleCalendar" not in tags:
+                            tags.append("McpGoogleCalendar")
+
+                    # Google Sheets MCP indicators
+                    sheets_indicators = ["sheets", "google sheets", "planilha", "spreadsheet"]
+                    if any(indicator in combined_content for indicator in sheets_indicators):
+                        if "McpGoogleSheets" not in tags:
+                            tags.append("McpGoogleSheets")
+
+                return tags
+
+            def get_initial_tags_non_streaming():
+                initial_tags = ["gpt-4.1"]  # Always start with model
+
+                image_generation_keywords = [
+                    "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
+                    "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
+                ]
+
+                if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("ImageGen")
+                if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
+                    initial_tags.append("Vision")
+
+                return initial_tags
+
+            initial_tags = get_initial_tags_non_streaming()
+            # Format as: `⛭ gpt-4.1` `Vision` etc.
+            tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
+            header_prefix = f"{tag_display}\n\n"
 
             try:
-                thinking_msg = await say(text=":hourglass_flowing_sand:Pensando...", channel=original_channel_id, thread_ts=thread_ts_for_reply)
-                message_ts = thinking_msg.get("ts")
-
-                # --- Cumulative Tag System for Non-Streaming ---
-                def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
-                    """Build cumulative tags for non-streaming responses."""
-                    tags = ["gpt-4.1"]  # Always start with model
-
-                    # Add Vision if images are being processed
-                    if image_urls:
-                        tags.append("Vision")
-
-                    # Add AudioTranscribe if audio files are present
-                    if audio_files:
-                        tags.append("AudioTranscribe")
-
-                    # Add tools based on tool calls
-                    if tool_calls:
-                        for call in tool_calls:
-                            name = call.get("tool_name", call.get("name", "")).lower()
-                            tool_type = call.get("tool_type", "").lower()
-
-                            # Web Search detection
-                            if "web_search" in name or "web_search" in tool_type:
-                                if "WebSearch" not in tags:
-                                    tags.append("WebSearch")
-
-                            # Image Generation detection
-                            elif name == "image_generation_tool" or tool_type == "image_generation_tool":
-                                if "ImageGen" not in tags:
-                                    tags.append("ImageGen")
-
-                            # MCP detection
-                            elif "mcp" in name or "mcp" in tool_type:
-                                # Extract MCP service name
-                                if "everhour" in name or "everhour" in tool_type:
-                                    if "McpEverhour" not in tags:
-                                        tags.append("McpEverhour")
-                                elif "asana" in name or "asana" in tool_type:
-                                    if "McpAsana" not in tags:
-                                        tags.append("McpAsana")
-                                elif "gmail" in name or "gmail" in tool_type:
-                                    if "McpGmail" not in tags:
-                                        tags.append("McpGmail")
-                                elif "google" in name or "drive" in name or "gdrive" in name:
-                                    if "McpGoogleDrive" not in tags:
-                                        tags.append("McpGoogleDrive")
-                                elif "calendar" in name:
-                                    if "McpGoogleCalendar" not in tags:
-                                        tags.append("McpGoogleCalendar")
-                                elif "docs" in name:
-                                    if "McpGoogleDocs" not in tags:
-                                        tags.append("McpGoogleDocs")
-                                elif "sheets" in name:
-                                    if "McpGoogleSheets" not in tags:
-                                        tags.append("McpGoogleSheets")
-                                elif "slack" in name:
-                                    if "McpSlack" not in tags:
-                                        tags.append("McpSlack")
-
-                    return tags
-
-                def derive_cumulative_tags_non_streaming_with_response(tool_calls, audio_files, image_urls, final_response=None, user_message=None):
-                    """Build cumulative tags for non-streaming responses with response analysis."""
-                    tags = derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls)
-
-                    # Enhanced detection: Check if MCP was used based on response content and user message
-                    if final_response or user_message:
-                        response_content = (final_response or "").lower()
-                        message_content = (user_message or "").lower()
-                        combined_content = response_content + " " + message_content
-
-                        # Google Drive MCP indicators
-                        drive_indicators = ["google drive", "my drive", "drive.google.com", "arquivo encontrado", "pasta encontrada", "gdrive", "livia.png", "id:", "drive da live"]
-                        if any(indicator in combined_content for indicator in drive_indicators):
-                            if "McpGoogleDrive" not in tags:
-                                tags.append("McpGoogleDrive")
-
-                        # Everhour MCP indicators (specific keyword only)
-                        everhour_indicators = ["everhour", "tempo adicionado", "task ev:", "ev:"]
-                        if any(indicator in combined_content for indicator in everhour_indicators):
-                            if "McpEverhour" not in tags:
-                                tags.append("McpEverhour")
-
-                        # Asana MCP indicators (specific keyword only)
-                        asana_indicators = ["asana"]
-                        if any(indicator in combined_content for indicator in asana_indicators):
-                            if "McpAsana" not in tags:
-                                tags.append("McpAsana")
-
-                        # Gmail MCP indicators (specific keyword only)
-                        gmail_indicators = ["gmail"]
-                        if any(indicator in combined_content for indicator in gmail_indicators):
-                            if "McpGmail" not in tags:
-                                tags.append("McpGmail")
-
-                        # Google Docs MCP indicators
-                        docs_indicators = ["google docs", "documento", "docs", "live_codigodeeticaeconduta"]
-                        if any(indicator in combined_content for indicator in docs_indicators):
-                            if "McpGoogleDocs" not in tags:
-                                tags.append("McpGoogleDocs")
-
-                        # Google Calendar MCP indicators
-                        calendar_indicators = ["calendar", "calendario", "agenda", "evento", "reunião"]
-                        if any(indicator in combined_content for indicator in calendar_indicators):
-                            if "McpGoogleCalendar" not in tags:
-                                tags.append("McpGoogleCalendar")
-
-                        # Google Sheets MCP indicators
-                        sheets_indicators = ["sheets", "google sheets", "planilha", "spreadsheet"]
-                        if any(indicator in combined_content for indicator in sheets_indicators):
-                            if "McpGoogleSheets" not in tags:
-                                tags.append("McpGoogleSheets")
-
-                    return tags
-
-                def get_initial_tags_non_streaming():
-                    initial_tags = ["gpt-4.1"]  # Always start with model
-
-                    image_generation_keywords = [
-                        "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
-                        "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
-                    ]
-
-                    if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                        initial_tags.append("ImageGen")
-                    if image_urls and not any(keyword in (text or "").lower() for keyword in image_generation_keywords):
-                        initial_tags.append("Vision")
-
-                    return initial_tags
-
-                initial_tags = get_initial_tags_non_streaming()
-                # Format as: `⛭ gpt-4.1` `Vision` etc.
-                tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
-                header_prefix = f"{tag_display}\n\n"
                 logger.info(
                     f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent..."
                 )
@@ -867,11 +795,6 @@ class SlackSocketModeServer:
                     ts=message_ts,
                     text=f"Sorry, I encountered an error: {str(e)}"
                 )
-            finally:
-                # Clean up processing protection
-                if hasattr(self, '_active_processing'):
-                    processing_key = f"{original_channel_id}_{thread_ts_for_reply}_{user_id}"
-                    self._active_processing.discard(processing_key)
 
     def _extract_image_urls(self, event: Dict[str, Any]) -> List[str]:
         """Extract image URLs from Slack event."""
@@ -1307,33 +1230,17 @@ class SlackSocketModeServer:
 
             logger.info(f"App mention - Text: '{text}', Channel: {channel_id}, Thread: {thread_ts}")
 
-            # Remove the mention from the text and protect against multiple mentions
+            # Remove the mention from the text
             try:
                 auth_response = await self.app.client.auth_test()
                 current_bot_id = auth_response["user_id"]
-
-                # Count mentions to detect potential spam/loops
-                mention_pattern = f"<@{current_bot_id}>"
-                mention_count = text.count(mention_pattern)
-
-                if mention_count > 3:
-                    logger.warning(f"🚨 PROTECTION: Too many mentions ({mention_count}) detected - potential spam/loop, limiting processing")
-                    # Still process but with a warning message
-                    text = f"⚠️ Detectei muitas menções ({mention_count}). Processando apenas uma vez para evitar loops."
-                else:
-                    # Remove all mentions normally
-                    text = text.replace(mention_pattern, "").strip()
-                    logger.info(f"Cleaned text after removing {mention_count} mention(s): '{text}'")
-
+                text = text.replace(f"<@{current_bot_id}>", "").strip()
+                logger.info(f"Cleaned text after removing mention: '{text}'")
             except Exception as e:
                 logger.error(f"Error getting bot user ID: {e}")
                 # Fallback: try to remove any mention pattern
                 import re
-                original_text = text
                 text = re.sub(r'<@[A-Z0-9]+>', '', text).strip()
-                mention_count = len(re.findall(r'<@[A-Z0-9]+>', original_text))
-                if mention_count > 3:
-                    text = f"⚠️ Detectei muitas menções ({mention_count}). Processando apenas uma vez para evitar loops."
                 logger.info(f"Fallback cleaned text: '{text}'")
 
             # Check for audio files even if no text
