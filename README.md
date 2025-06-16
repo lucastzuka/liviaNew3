@@ -16,6 +16,7 @@
 - **⚡ SUPER OTIMIZADO**: 85-93% redução de latência + streaming rápido.
 - **🔄 Rate Limiting Inteligente**: Atualizações otimizadas (10 chars ou 0.5s)
 - **📱 Experiência ChatGPT no Slack**: Interface de conversação fluida e responsiva.
+- **📊 Contagem de Tokens**: No fim de cada resposta é exibido o total de tokens usados e a porcentagem da janela de contexto.
 
 ### 🛠️ **Ferramentas Avançadas**
 - **🔍 Web Search Tool** - Busca informações atuais na internet.

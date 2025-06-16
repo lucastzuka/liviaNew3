@@ -12,6 +12,7 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+import tiktoken
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -35,6 +36,15 @@ if env_path.exists():
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def count_tokens(text: str, model: str = "gpt-4o") -> int:
+    """Return the number of tokens for a given text and model."""
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except Exception:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    return len(encoding.encode(text))
 
 
 # Import MCP configurations from organized module
@@ -277,10 +287,19 @@ async def process_message_with_structured_output(mcp_key: str, message: str, ima
                             structured_data = final_response.output_parsed.model_dump()
                         logger.info("Structured output streaming completed")
 
+            input_tokens = count_tokens(str(message), "gpt-4o")
+            output_tokens = count_tokens(full_response or "", "gpt-4o")
+            token_usage = {
+                "input": input_tokens,
+                "output": output_tokens,
+                "total": input_tokens + output_tokens,
+            }
+
             return {
                 "text": full_response or "No response generated.",
                 "structured_data": structured_data,
-                "tools": []
+                "tools": [],
+                "token_usage": token_usage,
             }
         else:
             # Handle non-streaming response
@@ -291,10 +310,19 @@ async def process_message_with_structured_output(mcp_key: str, message: str, ima
                 structured_data = None
                 response_text = response.output_text or "No response generated."
 
+            input_tokens = count_tokens(str(message), "gpt-4o")
+            output_tokens = count_tokens(response_text or "", "gpt-4o")
+            token_usage = {
+                "input": input_tokens,
+                "output": output_tokens,
+                "total": input_tokens + output_tokens,
+            }
+
             return {
                 "text": response_text,
                 "structured_data": structured_data,
-                "tools": []
+                "tools": [],
+                "token_usage": token_usage,
             }
 
     except Exception as e:
@@ -591,7 +619,18 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 logger.error(f"   {i}. {error['message']} (Code: {error.get('code', 'N/A')})")
 
         logger.info(f"✅ MCP Final Response: {full_response}")
-        return {"text": full_response or "No response generated.", "tools": tool_calls_made}
+        input_tokens = count_tokens(str(message), "gpt-4o")
+        output_tokens = count_tokens(full_response or "", "gpt-4o")
+        token_usage = {
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": input_tokens + output_tokens,
+        }
+        return {
+            "text": full_response or "No response generated.",
+            "tools": tool_calls_made,
+            "token_usage": token_usage,
+        }
 
     except Exception as e:
         error_message = str(e)
@@ -623,10 +662,24 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                         }
                     ]
                 )
-                return {"text": simplified_response.output_text or "Não foi possível acessar os emails no momento.", "tools": []}
+                input_tokens = count_tokens(str(message), "gpt-4o")
+                output_tokens = count_tokens(simplified_response.output_text or "", "gpt-4o")
+                token_usage = {
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "total": input_tokens + output_tokens,
+                }
+                return {"text": simplified_response.output_text or "Não foi possível acessar os emails no momento.", "tools": [], "token_usage": token_usage}
             except Exception as retry_error:
                 logger.error(f"Gmail MCP retry also failed: {retry_error}")
-                return {"text": "❌ Não foi possível acessar os emails do Gmail no momento. O email pode ser muito grande para processar. Tente ser mais específico na busca.", "tools": []}
+                input_tokens = count_tokens(str(message), "gpt-4o")
+                output_tokens = count_tokens("", "gpt-4o")
+                token_usage = {
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "total": input_tokens + output_tokens,
+                }
+                return {"text": "❌ Não foi possível acessar os emails do Gmail no momento. O email pode ser muito grande para processar. Tente ser mais específico na busca.", "tools": [], "token_usage": token_usage}
 
         raise
 
@@ -878,7 +931,15 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
         logger.error(f"Error during agent streaming run (trace_id: {trace_id}): {e}", exc_info=True)
         final_output = f"An error occurred while processing your request: {str(e)}"
 
-    return {"text": str(final_output), "tools": tool_calls_made}
+    input_tokens = count_tokens(str(message), agent.model)
+    output_tokens = count_tokens(str(final_output), agent.model)
+    token_usage = {
+        "input": input_tokens,
+        "output": output_tokens,
+        "total": input_tokens + output_tokens,
+    }
+
+    return {"text": str(final_output), "tools": tool_calls_made, "token_usage": token_usage}
 
 
 # Standalone execution part (optional for the article, but good for context)

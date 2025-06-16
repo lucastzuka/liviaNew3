@@ -17,6 +17,16 @@ from slack_sdk.web.async_client import AsyncWebClient
 import ssl
 import certifi
 from dotenv import load_dotenv
+import tiktoken
+
+
+def count_tokens(text: str, model: str = "gpt-4o") -> int:
+    """Return token count for text using tiktoken."""
+    try:
+        enc = tiktoken.encoding_for_model(model)
+    except Exception:
+        enc = tiktoken.get_encoding("cl100k_base")
+    return len(enc.encode(text))
 
 # Load environment variables from .env file
 load_dotenv()
@@ -50,6 +60,14 @@ except Exception:
 agent_semaphore = asyncio.Semaphore(max_concurrency)
 processed_messages = set()  # Cache de mensagens processadas
 bot_user_id = "U057233T98A"  # ID do bot no Slack - IMPORTANTE para detectar menções
+
+# Token usage tracking per thread/channel
+from collections import defaultdict
+thread_token_usage = defaultdict(int)
+MODEL_CONTEXT_LIMITS = {
+    "gpt-4o": 128000,
+    "gpt-4.1": 128000,
+}
 
 # Structured Outputs configuration
 use_structured_outputs = os.environ.get("LIVIA_USE_STRUCTURED_OUTPUTS", "false").lower() == "true"
@@ -448,7 +466,21 @@ class SlackSocketModeServer:
                 header_prefix_final = f"{tag_final_display}\n\n"
 
                 try:
-                    formatted_response = header_prefix_final + format_message_for_slack(text_resp)
+                    token_info = response.get("token_usage", {}) if isinstance(response, dict) else {}
+                    input_tokens = token_info.get("input", count_tokens(context_input))
+                    output_tokens = token_info.get("output", count_tokens(text_resp))
+                    total_tokens = input_tokens + output_tokens
+                    thread_key = thread_ts_for_reply or channel_id
+                    thread_token_usage[thread_key] += total_tokens
+                    context_limit = MODEL_CONTEXT_LIMITS.get(agent.model, 128000)
+                    percent = (thread_token_usage[thread_key] / context_limit) * 100
+                    token_footer = (
+                        f"\n\nToken usage desta resposta: {total_tokens} (in: {input_tokens}, out: {output_tokens})"
+                        f"\nVocê já utilizou: {percent:.1f}% de {context_limit} tokens."
+                    )
+
+                    text_with_footer = text_resp + token_footer
+                    formatted_response = header_prefix_final + format_message_for_slack(text_with_footer)
                     await self.app.client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
@@ -650,7 +682,21 @@ class SlackSocketModeServer:
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] USER REQUEST: {context_input}")
                 logger.info(f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] BOT RESPONSE: {text_resp}")
 
-                formatted_response = header_prefix_final + format_message_for_slack(text_resp)
+                token_info = response.get("token_usage", {}) if isinstance(response, dict) else {}
+                input_tokens = token_info.get("input", count_tokens(context_input))
+                output_tokens = token_info.get("output", count_tokens(text_resp))
+                total_tokens = input_tokens + output_tokens
+                thread_key = thread_ts_for_reply or channel_id
+                thread_token_usage[thread_key] += total_tokens
+                context_limit = MODEL_CONTEXT_LIMITS.get(agent.model, 128000)
+                percent = (thread_token_usage[thread_key] / context_limit) * 100
+                token_footer = (
+                    f"\n\nToken usage desta resposta: {total_tokens} (in: {input_tokens}, out: {output_tokens})"
+                    f"\nVocê já utilizou: {percent:.1f}% de {context_limit} tokens."
+                )
+
+                text_with_footer = text_resp + token_footer
+                formatted_response = header_prefix_final + format_message_for_slack(text_with_footer)
                 await self.app.client.chat_update(
                     channel=original_channel_id,
                     ts=message_ts,
