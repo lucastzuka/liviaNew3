@@ -424,7 +424,27 @@ ERROR: '❌ Erro: [specific error details]'
         tool_calls_made = []
         errors_encountered = []
 
+        # Circuit breaker for MCP streaming
+        import time
+        mcp_start_time = time.time()
+        max_mcp_duration = 90  # 1.5 minutes max for MCP
+        mcp_event_count = 0
+        max_mcp_events = 500
+
         for event in stream:
+            # Circuit breaker checks for MCP
+            current_time = time.time()
+            mcp_duration = current_time - mcp_start_time
+            mcp_event_count += 1
+
+            if mcp_duration > max_mcp_duration:
+                logger.error(f"🚨 MCP CIRCUIT BREAKER: Stream timeout after {mcp_duration:.1f}s - stopping")
+                break
+
+            if mcp_event_count > max_mcp_events:
+                logger.error(f"🚨 MCP CIRCUIT BREAKER: Too many events ({mcp_event_count}) - stopping")
+                break
+
             if hasattr(event, 'type'):
                 if event.type == "response.output_text.delta":
                     delta_text = getattr(event, 'delta', '')
@@ -638,20 +658,17 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
-                    "🗓️ **CRITICAL: Today is June 5, 2025**: Use 2025-06-05 as reference for 'today'\n"
                     "📅 **Search Strategy**:\n"
-                    "- Try these tools in order: gcalendar_find_events, gcalendar_search_events, google_calendar_find_events\n"
+                    "- Try these tools: gcalendar_find_events, gcalendar_search_events, google_calendar_find_events\n"
                     "- Use start_date and end_date parameters in YYYY-MM-DD format\n"
-                    "- Default range: today to next 7 days (2025-06-05 to 2025-06-12)\n"
                     "- Timezone: America/Sao_Paulo\n"
-                    "- If no events found, try broader date range (2025-06-01 to 2025-06-30)\n\n"
+                    "- If no events found, try broader date range (AAA-MM-DD to AAA-MM-DD)\n\n"
                     "📋 **Response Format** (Portuguese):\n"
                     "📅 **Eventos no Google Calendar:**\n"
                     "1. **[Nome do Evento]**\n"
                     "   - 📅 Data: [data]\n"
                     "   - ⏰ Horário: [hora início] às [hora fim]\n"
                     "   - 🔗 Link: [link se disponível]\n\n"
-                    "⚠️ **IMPORTANT**: Always search with explicit date ranges in JUNE 2025!"
                 ),
                 tools=[
                     {
@@ -674,7 +691,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use slack_find_message with 'in:channel-name' format.\n"
-                    "Sort by timestamp desc. Try 'inovacao' or 'inovação' variations.\n"
+                    "Sort by timestamp desc.\n"
                     "Return: user, timestamp, message content, permalink, summary in Portuguese."
                 ),
                 tools=[
@@ -720,7 +737,26 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         tool_calls_made = []
         errors_encountered = []
 
+        # Circuit breaker for regular MCP streaming
+        mcp_regular_start_time = time.time()
+        max_mcp_regular_duration = 90  # 1.5 minutes max for regular MCP
+        mcp_regular_event_count = 0
+        max_mcp_regular_events = 500
+
         for event in stream:
+            # Circuit breaker checks for regular MCP
+            current_time = time.time()
+            mcp_regular_duration = current_time - mcp_regular_start_time
+            mcp_regular_event_count += 1
+
+            if mcp_regular_duration > max_mcp_regular_duration:
+                logger.error(f"🚨 REGULAR MCP CIRCUIT BREAKER: Stream timeout after {mcp_regular_duration:.1f}s - stopping")
+                break
+
+            if mcp_regular_event_count > max_mcp_regular_events:
+                logger.error(f"🚨 REGULAR MCP CIRCUIT BREAKER: Too many events ({mcp_regular_event_count}) - stopping")
+                break
+
             if hasattr(event, 'type'):
                 if event.type == "response.output_text.delta":
                     delta_text = getattr(event, 'delta', '')
@@ -945,7 +981,26 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
             full_response = ""
             final_message_output = ""
 
+            # Circuit breaker for streaming
+            import asyncio
+            stream_start_time = time.time()
+            max_stream_duration = 120  # 2 minutes max
+            event_count = 0
+            max_events = 1000  # Max events to prevent infinite loops
+
             async for event in result.stream_events():
+                # Circuit breaker checks
+                current_time = time.time()
+                stream_duration = current_time - stream_start_time
+                event_count += 1
+
+                if stream_duration > max_stream_duration:
+                    logger.error(f"🚨 AGENT CIRCUIT BREAKER: Stream timeout after {stream_duration:.1f}s - stopping")
+                    break
+
+                if event_count > max_events:
+                    logger.error(f"🚨 AGENT CIRCUIT BREAKER: Too many events ({event_count}) - stopping")
+                    break
                 if event.type == "raw_response_event":
                     if hasattr(event.data, 'type') and event.data.type == "response.output_text.delta":
                         delta_text = getattr(event.data, 'delta', '')
