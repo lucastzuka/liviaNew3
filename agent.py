@@ -11,6 +11,7 @@ Enhanced with Structured Outputs for reliable JSON schema adherence.
 import logging
 from pathlib import Path
 from typing import List, Optional
+import tiktoken
 from dotenv import load_dotenv
 
 # OpenAI Agents SDK components
@@ -24,6 +25,15 @@ if env_path.exists():
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def count_tokens(text: str, model: str = "gpt-4o") -> int:
+    """Return the number of tokens for a given text and model."""
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except Exception:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    return len(encoding.encode(text))
 
 
 # Import MCP configurations from organized module
@@ -456,7 +466,17 @@ ERROR: '❌ Erro: [specific error details]'
                 logger.info(f"   {i}. {call['tool_name']}: {call.get('error', 'SUCCESS')}")
 
         logger.info(f"✅ Enhanced Multi-Turn Final Response: {full_response}")
-        return {"text": full_response or "No response generated.", "tools": tool_calls_made}
+
+        # Calculate token usage
+        input_tokens = count_tokens(str(message), "gpt-4.1-mini")
+        output_tokens = count_tokens(full_response or "", "gpt-4.1-mini")
+        token_usage = {
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": input_tokens + output_tokens,
+        }
+
+        return {"text": full_response or "No response generated.", "tools": tool_calls_made, "token_usage": token_usage}
 
     except Exception as e:
         logger.error(f"❌ Enhanced Multi-Turn MCP processing failed: {e}", exc_info=True)
@@ -756,7 +776,17 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 logger.error(f"   {i}. {error['message']} (Code: {error.get('code', 'N/A')})")
 
         logger.info(f"✅ MCP Final Response: {full_response}")
-        return {"text": full_response or "No response generated.", "tools": tool_calls_made}
+
+        # Calculate token usage
+        input_tokens = count_tokens(str(message), "gpt-4.1-mini")
+        output_tokens = count_tokens(full_response or "", "gpt-4.1-mini")
+        token_usage = {
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": input_tokens + output_tokens,
+        }
+
+        return {"text": full_response or "No response generated.", "tools": tool_calls_made, "token_usage": token_usage}
 
     except Exception as e:
         error_message = str(e)
@@ -1035,7 +1065,16 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
         logger.error(f"Error during agent streaming run (trace_id: {trace_id}): {e}", exc_info=True)
         final_output = f"An error occurred while processing your request: {str(e)}"
 
-    return {"text": str(final_output), "tools": tool_calls_made}
+    # Calculate token usage
+    input_tokens = count_tokens(str(message), agent.model)
+    output_tokens = count_tokens(str(final_output), agent.model)
+    token_usage = {
+        "input": input_tokens,
+        "output": output_tokens,
+        "total": input_tokens + output_tokens,
+    }
+
+    return {"text": str(final_output), "tools": tool_calls_made, "token_usage": token_usage}
 
 
 # Standalone execution part (optional for the article, but good for context)
