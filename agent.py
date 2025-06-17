@@ -24,8 +24,9 @@ from agents import (
     ItemHelpers,
     FileSearchTool,
 )
-# Importa ferramenta personalizada de interpretador de código
-from tools.code_interpreter import CodeInterpreterTool
+# Importa ferramenta de interpretador de código do OpenAI Agents SDK
+from agents import CodeInterpreterTool
+from agents.tool import CodeInterpreter
 
 # Carrega variáveis de ambiente
 env_path = Path('.') / '.env'
@@ -64,7 +65,10 @@ async def create_agent() -> Agent:
 
     # Initialize core tools
     web_search_tool = WebSearchTool(search_context_size="medium")
-    code_interpreter_tool = CodeInterpreterTool()
+    # Note: CodeInterpreterTool temporarily disabled due to serialization issues
+    # code_interpreter_tool = CodeInterpreterTool(
+    #     tool_config=CodeInterpreter(container={"type": "auto"})
+    # )
 
     # Configure file search with vector store for document retrieval
     file_search_tool = FileSearchTool(
@@ -195,8 +199,8 @@ ELSE IF user asks for code execution or calculations
 </response_guidelines>
 """
         ),
-        model="gpt-4.1",  # Changed to gpt-4o for better vision support
-        tools=[web_search_tool, file_search_tool, code_interpreter_tool],
+        model="gpt-4.1-mini",  # Changed to gpt-4o for better vision support
+        tools=[web_search_tool, file_search_tool],  # CodeInterpreterTool temporarily disabled
         mcp_servers=mcp_servers,
     )
     servers_info = " and ".join(server_descriptions)
@@ -420,7 +424,7 @@ ERROR: '❌ Erro: [specific error details]'
     try:
         # Create enhanced multi-turn API call with FORCED tool usage
         stream = client.responses.create(
-            model="gpt-4.1",
+            model="gpt-4.1-mini",
             input=input_data,
             instructions=enhanced_instructions,
             tools=[
@@ -487,8 +491,8 @@ ERROR: '❌ Erro: [specific error details]'
         logger.info(f"✅ Enhanced Multi-Turn Final Response: {full_response}")
 
         # Calculate token usage
-        input_tokens = count_tokens(str(message), "gpt-4.1-mini")
-        output_tokens = count_tokens(full_response or "", "gpt-4.1-mini")
+        input_tokens = count_tokens(str(message), "gpt-4.1-mini-mini")
+        output_tokens = count_tokens(full_response or "", "gpt-4.1-mini-mini")
         token_usage = {
             "input": input_tokens,
             "output": output_tokens,
@@ -544,7 +548,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         # (code omitted, see above)
         if mcp_config["server_label"] == "zapier-mcpeverhour":
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency with Everhour MCP access.\n\n"
@@ -581,7 +585,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpgmail":
             # Special handling for Gmail with optimized search and content limiting
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Gmail tools to search and read emails.\n\n"
@@ -623,7 +627,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpasana":
             # Special handling for Asana operations
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access.\n\n"
@@ -653,7 +657,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpgooglecalendar":
             # Special handling for Google Calendar with consistent date parameters
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
@@ -688,7 +692,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         elif mcp_config["server_label"] == "zapier-mcpslack":
             # Special handling for Slack with message search and channel operations
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use slack_find_message with 'in:channel-name' format.\n"
@@ -712,7 +716,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         else:
             # Regular MCP processing for other services (Google Drive, etc.)
             stream = client.responses.create(
-                model="gpt-4.1",
+                model="gpt-4.1-mini",
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access. Sequential search: workspace→project→task.\n"
@@ -796,8 +800,8 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
         logger.info(f"✅ MCP Final Response: {full_response}")
 
         # Calculate token usage
-        input_tokens = count_tokens(str(message), "gpt-4.1-mini")
-        output_tokens = count_tokens(full_response or "", "gpt-4.1-mini")
+        input_tokens = count_tokens(str(message), "gpt-4.1-mini-mini")
+        output_tokens = count_tokens(full_response or "", "gpt-4.1-mini-mini")
         token_usage = {
             "input": input_tokens,
             "output": output_tokens,
@@ -816,7 +820,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
             try:
                 # Retry with more restrictive search and summarization (non-streaming fallback)
                 simplified_response = client.responses.create(
-                    model="gpt-4.1",
+                    model="gpt-4.1-mini",
                     input="Busque apenas o último email recebido na caixa de entrada e faça um resumo muito breve",
                     instructions=(
                         "You are Livia, AI assistant from ℓiⱴε agency. Search for the latest email in inbox using 'in:inbox' operator.\n"
@@ -1081,7 +1085,7 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
 
     except Exception as e:
         logger.error(f"Error during agent streaming run (trace_id: {trace_id}): {e}", exc_info=True)
-        final_output = f"An error occurred while processing your request: {str(e)}"
+        final_output = "Erro: Falha no processamento. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     # Calculate token usage
     input_tokens = count_tokens(str(message), agent.model)

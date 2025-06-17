@@ -13,7 +13,7 @@
 
 ### ⚡ **Performance e Streaming**
 - **🚀 STREAMING EM TEMPO REAL**: Respostas aparecem progressivamente como no ChatGPT
-- **⚡ SUPER OTIMIZADO**: 85-93% redução de latência + streaming rápido.
+- **⚡ SUPER OTIMIZADO**: streaming rápido.
 - **🔄 Rate Limiting Inteligente**: Atualizações otimizadas (10 chars ou 0.5s)
 - **📱 Experiência ChatGPT no Slack**: Interface de conversação fluida e responsiva.
 - **🧠 Gestão Inteligente de Memória**: Avisa automaticamente quando a conversa atinge o limite de contexto.
@@ -24,7 +24,7 @@
 - **🎵 Audio Transcription** - Transcrição de áudios (mp3, wav, m4a, ogg, flac, webm) de audios enviados pelo usuario para o bot no slack.
 - **👁️ Image Vision** - Análise de imagens com IA (PNG, JPEG, WEBP, GIF)
 - **🎨 Image Generation** - Geração de imagens usando gpt-image-1 sem streaming
-- **⚡ 9 MCPs Zapier** - Asana, Google Drive, Everhour, Gmail, Calendar, Docs, Analytics, etc.
+- **⚡ 9 MCPs Zapier** - Asana, Google Drive, Everhour, Gmail, Calendar, Google Docs, etc.
 - **✨ Formatação Slack Perfeita** - Conversão automática markdown → Slack
   - `**negrito**` → `*negrito*`
   - `[texto](url)` → `<url|texto>` clicável
@@ -32,9 +32,9 @@
 
 ### 🏗️ **Arquitetura Avançada**
 - **🚀 OpenAI Agents SDK**: Tecnologia de agentes mais recente da OpenAI
-- **🔄 OpenAI Responses API**: Pode ser usado para MCPs remotos com streaming
+- **🔄 OpenAI Responses API**: Pode ser usado
 - **📋 Structured Outputs**: Garantia de aderência a schemas JSON com validação automática
-- **🏗️ Arquitetura Híbrida**: Combina Agents SDK + Responses API + Structured Outputs
+- **🏗️ Arquitetura Híbrida**: Combina Agents SDK + Structured Outputs
 - **🔧 Sistema Modular**: Organizado e facilmente extensíveis.
 
 ## Limite de Concorrência (Atendimentos Simultâneos)
@@ -75,35 +75,11 @@ LIVIA_USE_STRUCTURED_OUTPUTS=true
 
 **Nota**: Requer modelos `gpt-4o-2024-08-06` ou posteriores.
 
-## 🚀 Configuração e Instalação
-
-## 🚀 Inicialização e Execução
 
 ### ⚡ **Comando Único (Recomendado)**
 
 ```bash
 ./start-livia.sh
-```
-
-## 🏗️ Arquitetura
-
-### 📁 **Estrutura do Projeto**
-```
-liviaNEW3/
-├── 🤖 agent.py              # Agente principal OpenAI
-├── 🌐 server.py             # Servidor Slack Socket Mode 
-├── 🛠️ tools/                # Ferramentas modulares
-│   ├── __init__.py         # ImageProcessor + exportações
-│   ├── web_search.py       # 🔍 WebSearchTool
-│   ├── image_generation.py # 🎨 ImageGenerationTool
-│   └── mcp/               # MCPs Zapier organizados
-│       ├── __init__.py
-│       └── zapier_mcps.py  # Configurações centralizadas
-├── 📋 slack_formatter.py    # Formatação Slack (markdown → Slack)
-├── 📦 requirements.txt      # Dependências Python
-├── 🚀 start-livia.sh        # Script de inicialização automática
-├── 📖 README.md            # Documentação completa
-└── 🔒 .env                 # Variáveis de ambiente (não versionado)
 ```
 
 ### 🔧 **Componentes Principais**

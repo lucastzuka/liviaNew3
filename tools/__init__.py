@@ -7,7 +7,6 @@ Exports all available tools for the chatbot.
 
 from .web_search import WebSearchTool
 from .image_generation import ImageGenerationTool, image_generator
-from .code_interpreter import CodeInterpreterTool
 
 # Enhanced ImageProcessor class with full functionality
 class ImageProcessor:
@@ -114,6 +113,5 @@ __all__ = [
     "WebSearchTool",
     "ImageProcessor",
     "ImageGenerationTool",
-    "image_generator",
-    "CodeInterpreterTool"
+    "image_generator"
 ]

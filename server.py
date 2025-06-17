@@ -41,62 +41,62 @@ def count_tokens(text: str, model: str = "gpt-4o") -> int:
         enc = tiktoken.get_encoding("cl100k_base")
     return len(enc.encode(text))
 
-# --- Better Error Handling ---
+# --- Fixed Error Messages (No Token Usage) ---
 def get_user_friendly_error_message(error: Exception) -> str:
     """
-    Converte erros técnicos em mensagens amigáveis para o usuário.
-    Baseado no ChatGPT-in-Slack para melhor experiência do usuário.
+    Retorna mensagens de erro fixas para evitar gasto de tokens.
+    Todas as mensagens seguem o padrão: "Erro: xxx. Se persistir entre em contato com: <@U046LTU4TT5>"
     """
     error_str = str(error).lower()
 
     # OpenAI API specific errors
     if isinstance(error, APITimeoutError):
-        return "⏱️ A resposta está demorando mais que o esperado. Tente novamente em alguns segundos."
+        return "Erro: Timeout na API. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     elif isinstance(error, RateLimitError):
-        return "🚦 Muitas solicitações simultâneas. Aguarde um momento e tente novamente."
+        return "Erro: Limite de requisições atingido. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     elif isinstance(error, APIConnectionError):
-        return "🌐 Problema de conexão com os serviços da OpenAI. Verificando conexão..."
+        return "Erro: Falha de conexão com OpenAI. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     elif isinstance(error, APIError):
         if "context_length_exceeded" in error_str or "token" in error_str:
-            return "📝 Conversa muito longa. Comece uma nova thread para continuar."
+            return "Erro: Conversa muito longa. Comece uma nova thread."
         elif "model" in error_str and "not found" in error_str:
-            return "🤖 Modelo temporariamente indisponível. Tentando modelo alternativo..."
+            return "Erro: Modelo indisponível. Se persistir entre em contato com: <@U046LTU4TT5>"
         else:
-            return f"🔧 Erro da API OpenAI: {str(error)[:100]}..."
+            return "Erro: API OpenAI. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     # Network and connection errors
     elif "timeout" in error_str or "timed out" in error_str:
-        return "⏱️ Timeout na operação. Tente novamente em alguns segundos."
+        return "Erro: Timeout na operação. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     elif "connection" in error_str or "network" in error_str:
-        return "🌐 Problema de rede. Verificando conexão..."
+        return "Erro: Problema de rede. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     elif "ssl" in error_str or "certificate" in error_str:
-        return "🔒 Problema de certificado SSL. Tentando reconectar..."
+        return "Erro: Certificado SSL. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     # Slack API errors
     elif "slack" in error_str:
         if "rate_limited" in error_str:
-            return "🚦 Limite de taxa do Slack atingido. Aguarde um momento."
+            return "Erro: Limite do Slack atingido. Se persistir entre em contato com: <@U046LTU4TT5>"
         elif "channel_not_found" in error_str:
-            return "📍 Canal não encontrado ou sem permissão de acesso."
+            return "Erro: Canal não encontrado. Se persistir entre em contato com: <@U046LTU4TT5>"
         else:
-            return f"💬 Erro do Slack: {str(error)[:100]}..."
+            return "Erro: API do Slack. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     # Memory and resource errors
     elif "memory" in error_str or "out of" in error_str:
-        return "💾 Recursos insuficientes. Tente uma solicitação menor."
+        return "Erro: Recursos insuficientes. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     # Permission errors
     elif "permission" in error_str or "unauthorized" in error_str or "forbidden" in error_str:
-        return "🔐 Sem permissão para esta operação. Verifique as configurações."
+        return "Erro: Sem permissão. Se persistir entre em contato com: <@U046LTU4TT5>"
 
     # Generic fallback
     else:
-        return f"❌ Erro inesperado: {str(error)[:100]}... Tente novamente ou contate o suporte."
+        return "Erro: Falha inesperada. Se persistir entre em contato com: <@U046LTU4TT5>"
 
 def should_retry_error(error: Exception) -> bool:
     """
@@ -225,8 +225,8 @@ bot_user_id = "U057233T98A"  # ID do bot no Slack - IMPORTANTE para detectar men
 thread_token_usage = defaultdict(int)
 MODEL_CONTEXT_LIMITS = {
     "gpt-4o": 128000,
-    "gpt-4.1": 128000,
     "gpt-4.1-mini": 128000,
+    "gpt-4.1-mini-mini": 128000,
     "gpt-4o-mini": 128000,
 }
 
@@ -497,12 +497,12 @@ class SlackSocketModeServer:
             def derive_cumulative_tags(tool_calls, audio_files, image_urls, user_message=None, final_response=None):
                 """
                 Constrói tags cumulativas mostrando todas as tecnologias usadas na resposta.
-                Formato: `⛭ gpt-4.1` `Vision` `WebSearch` etc.
+                Formato: `⛭ gpt-4.1-mini` `Vision` `WebSearch` etc.
                 """
                 tags = []
 
                 # Always start with the model
-                tags.append("gpt-4.1")
+                tags.append("gpt-4.1-mini")
 
                 # Add Vision if images are being processed
                 if image_urls:
@@ -633,7 +633,7 @@ class SlackSocketModeServer:
 
             # --- Determine initial cumulative tags (heuristic) ---
             def get_initial_cumulative_tags():
-                initial_tags = ["gpt-4.1"]  # Always start with model
+                initial_tags = ["gpt-4.1-mini"]  # Always start with model
 
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -650,7 +650,7 @@ class SlackSocketModeServer:
                 return initial_tags
 
             initial_tags = get_initial_cumulative_tags()
-            # Format as: `⛭ gpt-4.1` `Vision` etc.
+            # Format as: `⛭ gpt-4.1-mini` `Vision` etc.
             tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
             header_prefix = f"{tag_display}\n\n"
 
@@ -726,7 +726,7 @@ class SlackSocketModeServer:
                         detected_tools.extend(tool_calls_detected)
                         # Update header based on cumulative tags
                         cumulative_tags = derive_cumulative_tags(detected_tools, audio_files, processed_image_urls, user_message=text, final_response=full_text)
-                        # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                        # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
                         tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(cumulative_tags)])
                         current_header_prefix = f"{tag_display}\n\n"
 
@@ -782,7 +782,7 @@ class SlackSocketModeServer:
 
                 # Compute header_prefix_final based on tools actually used (cumulative)
                 final_cumulative_tags = derive_cumulative_tags(tool_calls, audio_files, processed_image_urls, user_message=text, final_response=text_resp)
-                # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
 
@@ -857,7 +857,7 @@ class SlackSocketModeServer:
                     else:
                         await say(text=user_error_msg, channel=original_channel_id, thread_ts=thread_ts_for_reply)
                 except:
-                    await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                    await say(text="Erro: Falha na comunicação. Se persistir entre em contato com: <@U046LTU4TT5>", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             finally:
                 # Clean up processing protection
                 if hasattr(self, '_active_processing'):
@@ -943,7 +943,7 @@ class SlackSocketModeServer:
                 # --- Cumulative Tag System for Non-Streaming ---
                 def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
                     """Constrói tags cumulativas para respostas não-streaming."""
-                    tags = ["gpt-4.1"]  # Always start with model
+                    tags = ["gpt-4.1-mini"]  # Always start with model
 
                     # Add Vision if images are being processed
                     if image_urls:
@@ -1054,7 +1054,7 @@ class SlackSocketModeServer:
                     return tags
 
                 def get_initial_tags_non_streaming():
-                    initial_tags = ["gpt-4.1"]  # Always start with model
+                    initial_tags = ["gpt-4.1-mini"]  # Always start with model
 
                     image_generation_keywords = [
                         "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -1069,7 +1069,7 @@ class SlackSocketModeServer:
                     return initial_tags
 
                 initial_tags = get_initial_tags_non_streaming()
-                # Format as: `⛭ gpt-4.1` `Vision` etc.
+                # Format as: `⛭ gpt-4.1-mini` `Vision` etc.
                 tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
                 header_prefix = f"{tag_display}\n\n"
 
@@ -1081,7 +1081,7 @@ class SlackSocketModeServer:
                     await self.app.client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
-                        text=f"`⛭ Cached` `⛭ gpt-4.1`\n\n{cached_response}"
+                        text=f"`⛭ Cached` `⛭ gpt-4.1-mini`\n\n{cached_response}"
                     )
                     return
 
@@ -1102,7 +1102,7 @@ class SlackSocketModeServer:
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
                 final_cumulative_tags = derive_cumulative_tags_non_streaming_with_response(tool_calls, [], processed_image_urls, text_resp, text)
-                # Format as: `⛭ gpt-4.1` `Vision` `WebSearch`
+                # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
 
@@ -1315,7 +1315,7 @@ class SlackSocketModeServer:
             prompt = self._extract_image_prompt(text)
             if not prompt:
                 await say(
-                    text="❌ Não consegui entender o que você quer que eu desenhe. Tente algo como: 'Gere uma imagem de um gato fofo'",
+                    text="Erro: Prompt de imagem inválido. Se persistir entre em contato com: <@U046LTU4TT5>",
                     channel=channel_id,
                     thread_ts=thread_ts
                 )
@@ -1374,7 +1374,7 @@ class SlackSocketModeServer:
                         await self.app.client.chat_update(
                             channel=channel_id,
                             ts=message_ts,
-                            text="❌ Erro ao fazer upload da imagem"
+                            text="Erro: Upload de imagem falhou. Se persistir entre em contato com: <@U046LTU4TT5>"
                         )
 
                     # Clean up temporary file
@@ -1384,20 +1384,20 @@ class SlackSocketModeServer:
                     await self.app.client.chat_update(
                         channel=channel_id,
                         ts=message_ts,
-                        text="❌ Erro: Nenhuma imagem foi gerada"
+                        text="Erro: Geração de imagem falhou. Se persistir entre em contato com: <@U046LTU4TT5>"
                     )
 
             else:
                 await self.app.client.chat_update(
                     channel=channel_id,
                     ts=message_ts,
-                    text=f"❌ Erro ao gerar imagem: {result.get('error', 'Erro desconhecido')}"
+                    text="Erro: Geração de imagem falhou. Se persistir entre em contato com: <@U046LTU4TT5>"
                 )
 
         except Exception as e:
             logger.error(f"Error in image generation: {e}", exc_info=True)
             await say(
-                text=f"❌ Erro ao gerar imagem: {str(e)}",
+                text="Erro: Geração de imagem falhou. Se persistir entre em contato com: <@U046LTU4TT5>",
                 channel=channel_id,
                 thread_ts=thread_ts
             )
