@@ -1,12 +1,12 @@
 # 🤖 Livia - Slack Chatbot Agent
 
-**Livia é um chatbot inteligente para Slack com integração completa da API do Slack usando Bolt for Python.** Ela usa **OpenAI Agents SDK** e **API Responses** para fornecer uma experiência de IA avançada diretamente no Slack, respondendo apenas quando mencionada na primeira mensagem de threads.
+**Livia é um chatbot inteligente para Slack com integração completa da API do Slack usando Bolt for Python.** Ela usa **OpenAI Agents SDK** para fornecer uma experiência de IA avançada diretamente no Slack, respondendo apenas quando mencionada na primeira mensagem de threads.
 
 ## ✨ Características Principais
 
 ### 🎯 **Integração Slack Completa**
 - **✅ Slack Socket Mode**: Conexão em tempo real usando Bolt for Python (framework oficial)
-- **✅ Thread Detection**: Responde apenas em threads que começam com menção ao bot (a primeira msg da thread menciona o bot)
+- **✅ Thread Detection**: Responde apenas dentro de threads que começam com menção ao bot (a primeira msg da thread menciona o bot)
 - **✅ Multi-Channel Support**: Funciona em canais públicos, privados, grupos e DMs (mas durante o desenvolvimento só envia msg no canal de testes C059NNLU3E1)
 - **✅ Security Whitelist**: Sistema de segurança para desenvolvimento com canais/usuários permitidos
 - **Anti-Loop Protection**: Proteção robusta contra respostas infinitas, respostas em canal ou usuario errado, respostas duplicadas, etc.
