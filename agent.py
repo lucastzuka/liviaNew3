@@ -10,6 +10,9 @@ Responde apenas em threads que mencionam o bot na primeira mensagem.
 import logging
 import time
 from pathlib import Path
+
+from security_utils import setup_global_logging_redaction
+setup_global_logging_redaction()
 from typing import List, Optional
 import tiktoken
 from dotenv import load_dotenv
