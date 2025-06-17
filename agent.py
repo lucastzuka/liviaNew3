@@ -28,6 +28,14 @@ from agents import (
 from agents import CodeInterpreterTool
 from agents.tool import CodeInterpreter
 
+# Importa MCP Server para integração com Zapier MCPs
+try:
+    from agents.mcp.server import MCPServerSse, MCPServerSseParams
+    MCP_AVAILABLE = True
+except ImportError:
+    logger.warning("MCPServerSse not available - falling back to hybrid architecture")
+    MCP_AVAILABLE = False
+
 # Carrega variáveis de ambiente
 env_path = Path('.') / '.env'
 if env_path.exists():
@@ -58,8 +66,178 @@ from tools.mcp.zapier_mcps import ZAPIER_MCPS
 # Slack communication handled via slack_bolt in server.py
 
 
+async def create_agent_with_mcp_servers() -> Agent:
+    """Create and configure the main Livia agent with MCP servers from OpenAI Agents SDK."""
+
+    if not MCP_AVAILABLE:
+        logger.warning("MCP not available - falling back to hybrid architecture")
+        return await create_agent()
+
+    try:
+        logger.info("Creating Livia - the Slack Chatbot Agent with MCP servers...")
+
+        # Initialize core tools
+        web_search_tool = WebSearchTool(search_context_size="medium")
+        # Note: CodeInterpreterTool temporarily disabled due to serialization issues
+        # code_interpreter_tool = CodeInterpreterTool(
+        #     tool_config=CodeInterpreter(container={"type": "auto"})
+        # )
+
+        # Configure file search with vector store for document retrieval
+        file_search_tool = FileSearchTool(
+            vector_store_ids=["vs_683e3a1ac4808191ae5e6fe24392e609"],
+            max_num_results=5,
+            include_search_results=True
+        )
+
+        # Create MCP servers for all Zapier MCPs
+        mcp_servers = []
+        for mcp_key, mcp_config in ZAPIER_MCPS.items():
+            try:
+                # Create MCPServerSse for remote Zapier MCP servers using TypedDict params
+                params: MCPServerSseParams = {
+                    "url": mcp_config["url"],
+                    "headers": {"Authorization": f"Bearer {mcp_config['api_key'].strip()}"},
+                    "timeout": 30.0,  # 30 seconds timeout
+                    "sse_read_timeout": 300.0  # 5 minutes SSE read timeout
+                }
+
+                mcp_server = MCPServerSse(
+                    params=params,
+                    cache_tools_list=True,  # Cache tools for better performance
+                    name=mcp_config["server_label"]
+                )
+
+                # Connect to the MCP server
+                logger.info(f"Connecting to {mcp_config['name']}...")
+                await mcp_server.connect()
+                logger.info(f"Connected to {mcp_config['name']}")
+
+                mcp_servers.append(mcp_server)
+                logger.info(f"Created MCPServerSse for {mcp_config['name']}")
+            except Exception as e:
+                logger.error(f"Failed to create/connect MCP server for {mcp_config['name']}: {e}")
+                # Continue with other servers
+
+        # Core tools only (MCP tools will be added automatically by the agent)
+        core_tools = [web_search_tool, file_search_tool]
+
+        # Generate dynamic Zapier tools description from configuration
+        zapier_descriptions = []
+        for mcp_key, mcp_config in ZAPIER_MCPS.items():
+            zapier_descriptions.append(f"  - {mcp_config['description']}")
+
+        zapier_tools_description = (
+            "Zapier Integration Tools (via OpenAI Agents SDK MCP Servers):\n"
+            + "\n".join(zapier_descriptions) + "\n"
+            "Como usar (keywords específicas):\n"
+            "  - Para mcpAsana: use 'asana'\n"
+            "  - Para mcpEverhour: use 'everhour'\n"
+            "  - Para mcpGmail: use 'gmail'\n"
+            "  - Para mcpGoogleDocs: use 'docs'\n"
+            "  - Para mcpGoogleSheets: use 'sheets'\n"
+            "  - Para Google Drive: use 'drive'\n"
+            "  - Para mcpGoogleCalendar: use 'calendar'\n"
+            "  - Para mcpSlack: use 'slack'\n"
+        )
+
+        logger.info(f"Configured {len(mcp_servers)} MCP servers for Zapier MCPs")
+
+        # If no MCP servers connected successfully, fall back to hybrid architecture
+        if len(mcp_servers) == 0:
+            logger.warning("No MCP servers connected successfully - falling back to hybrid architecture")
+            return await create_agent()
+
+        # Create agent with MCP servers
+        agent = Agent(
+            name="Livia",
+            tools=core_tools,  # Core tools: web search, file search
+            mcp_servers=mcp_servers,  # MCP servers will provide additional tools automatically
+            instructions=(
+            """<identity>
+You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilian advertising agency. You operate in Slack channels, groups, and DMs and your Slack ID is <@U057233T98A>.
+</identity>
+
+<communication_style>
+- BE EXTREMELY CONCISE AND BRIEF - this is your primary directive
+- Default to short, direct answers unless explicitly asked for details
+- One sentence responses are preferred for simple questions
+- Avoid unnecessary explanations, steps, or elaborations
+- Always respond in the same language the user communicates with you
+- Use Slack formatting: *bold*, _italic_, ~strikethrough~
+- Your Slack ID: <@U057233T98A>
+- Only mention File Search or file names when explicitly asked about documents
+- Feel free to disagree constructively to improve results
+</communication_style>
+
+<available_tools>
+- Web Search Tool: search the internet for current information
+- File Search Tool: search uploaded documents in the knowledge base
+- Image Vision: analyze uploaded images or URLs
+- Image Generation Tool: create images with gpt-image-1
+- Code Interpreter: run short Python snippets and return the output
+- Audio Transcription: convert user audio files to text
+- Prompt Caching: reuse stored answers for repeated prompts
+""" + f"{zapier_tools_description}" + """
+<mcp_usage_rules>
+1. Sequential Search Strategy: workspace → project → task
+2. Always include ALL IDs/numbers from API responses
+3. Use exact IDs when available in conversation history
+4. Make multiple MCP calls as needed to complete tasks
+5. Limit results to maximum 4 items per search
+</mcp_usage_rules>
+
+<search_strategy>
+CRITICAL: Use intelligent search strategy to avoid unnecessary tool calls:
+
+IF info is static/historical (e.g., coding principles, scientific facts, brand colors, company info)
+→ ANSWER DIRECTLY without tools (info rarely changes)
+
+ELSE IF info changes periodically (e.g., rankings, statistics, trends)
+→ ANSWER DIRECTLY but offer to search for latest updates
+
+ELSE IF info changes frequently (e.g., weather, news, stock prices, current events)
+→ USE WEB SEARCH immediately for accurate current information
+
+ELSE IF user asks about documents/files
+→ USE FILE SEARCH to find relevant documents in knowledge base
+
+ELSE IF user asks for code execution or calculations
+→ USE CODE INTERPRETER for Python snippets and computations
+</search_strategy>
+
+<response_guidelines>
+- NEVER answer with uncertainty - if unsure, USE AVAILABLE TOOLS for verification
+- Use web search for current/changing information only
+- Use file search when users ask about documents
+- Provide detailed image analysis when images are shared - you CAN see and analyze images perfectly
+- NEVER say you cannot see images - you have full vision capabilities and should analyze them directly
+- Try multiple search strategies if initial attempts fail
+- Suggest alternative search terms when no results found
+
+- Correct 'pasta' to 'arquivo' when appropriate
+- Cite sources for web searches
+- Mention document names for file searches
+- Be professional and helpful
+- Ask for clarification when needed
+- NEVER use slack_post_message - responses handled automatically
+- NEVER send messages to other channels
+</response_guidelines>
+"""
+            )
+        )
+
+        logger.info(f"Agent '{agent.name}' created with {len(core_tools)} core tools + {len(mcp_servers)} MCP servers")
+        return agent
+
+    except Exception as e:
+        logger.error(f"Failed to create agent with MCP servers: {e}")
+        logger.info("Falling back to hybrid architecture")
+        return await create_agent()
+
+
 async def create_agent() -> Agent:
-    """Create and configure the main Livia agent with all tools and instructions."""
+    """Create and configure the main Livia agent with all tools and instructions (legacy hybrid version)."""
 
     logger.info("Creating Livia - the Slack Chatbot Agent...")
 
@@ -97,16 +275,16 @@ async def create_agent() -> Agent:
     # Generate dynamic Zapier tools description from configuration
     zapier_descriptions = []
     for mcp_key, mcp_config in ZAPIER_MCPS.items():
-        zapier_descriptions.append(f"  - ✅ {mcp_config['description']}")
+        zapier_descriptions.append(f"  - {mcp_config['description']}")
 
     zapier_tools_description = (
-        "⚡ **Zapier Integration Tools** (Enhanced Multi-Turn via Responses API):\n"
+        "Zapier Integration Tools (Enhanced Multi-Turn via Responses API):\n"
         + "\n".join(zapier_descriptions) + "\n"
-        "**Enhanced Multi-Turn Execution:**\n"
+        "Enhanced Multi-Turn Execution:\n"
         "  - Improved Responses API with manual multi-turn loops\n"
         "  - Agent will attempt to chain tool calls (e.g., find project → find task → add time)\n"
         "  - Enhanced instructions for complex workflows\n"
-        "**Como usar (keywords específicas):**\n"
+        "Como usar (keywords específicas):\n"
         "  - Para mcpAsana: use 'asana'\n"
         "  - Para mcpEverhour: use 'everhour'\n"
         "  - Para mcpGmail: use 'gmail'\n"
@@ -115,13 +293,13 @@ async def create_agent() -> Agent:
         "  - Para Google Drive: use 'drive'\n"
         "  - Para mcpGoogleCalendar: use 'calendar'\n"
         "  - Para mcpSlack: use 'slack'\n"
-        "**Dicas:**\n"
+        "Dicas:\n"
         "  - IMPORTANTE: TargetGroupIndex_BR2024 é um ARQUIVO, não pasta\n"
         "  - Se não encontrar, tente busca parcial ou termos relacionados\n"
         "  - Instruções aprimoradas para execução em cadeia\n"
     )
 
-    logger.info(f"✅ Configured hybrid architecture with enhanced multi-turn for {len(ZAPIER_MCPS)} Zapier MCPs")
+    logger.info(f"Configured hybrid architecture with enhanced multi-turn for {len(ZAPIER_MCPS)} Zapier MCPs")
 
     # Slack communication handled directly via API (no MCP tools needed)
 
@@ -361,64 +539,79 @@ async def process_message_with_enhanced_multiturn_mcp(mcp_key: str, message: str
     else:
         input_data = message
 
-    logger.info(f"🔄 Enhanced Multi-Turn Processing with {mcp_config['name']}")
-    logger.info(f"📝 Original message: {message}")
+    logger.info(f"Enhanced Multi-Turn Processing with {mcp_config['name']}")
+    logger.info(f"Original message: {message}")
 
     # Enhanced instructions for multi-turn execution with Everhour-specific strategies
     enhanced_instructions = f"""You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access.
 
-🔄 **MULTI-TURN EXECUTION STRATEGY**:
-1. **ANALYZE** the user request to identify all required steps
-2. **EXECUTE** each step sequentially using available tools
-3. **CONTINUE** until the complete workflow is finished
-4. **RESPOND** only when the entire task is completed
+MULTI-TURN EXECUTION STRATEGY:
+1. ANALYZE the user request to identify all required steps
+2. EXECUTE each step sequentially using available tools
+3. CONTINUE until the complete workflow is finished
+4. RESPOND only when the entire task is completed
 
-🎯 **FOR EVERHOUR WORKFLOWS - ENHANCED STRATEGY**:
+FOR EVERHOUR WORKFLOWS - ENHANCED STRATEGY:
+
+AVAILABLE EVERHOUR COMMANDS:
+SEARCH & FIND: everhour_find_internal_project, everhour_find_project, everhour_find_section, everhour_find_member, everhour_find_task
+CREATE & MANAGE: everhour_create_client, everhour_create_project, everhour_create_section, everhour_create_task
+TIME TRACKING: everhour_start_timer, everhour_stop_timer, everhour_add_time
+
+WORKFLOW STEPS:
 - Step 1: Use everhour_find_project to find the project
 - Step 2: Try everhour_find_task to find the specific task
-- Step 3: **IF TASK NOT FOUND**: Try everhour_list_tasks for the project to see available tasks
-- Step 4: **IF STILL NOT FOUND**: Try everhour_add_time directly with project ID as taskId (fallback)
+- Step 3: IF TASK NOT FOUND: Try everhour_list_tasks for the project to see available tasks
+- Step 4: IF STILL NOT FOUND: Try everhour_add_time directly with project ID as taskId (fallback)
 - Step 5: Confirm success with details
 
-🚨 **EVERHOUR TASK SEARCH FALLBACK**:
+EVERHOUR TASK SEARCH FALLBACK:
 If everhour_find_task returns empty results ({{}}), try these alternatives:
 1. Use everhour_list_tasks with the project ID to see all available tasks
 2. Look for similar task names in the list
-3. **DIRECT ID MAPPING**: Use these known task IDs directly:
+3. DIRECT ID MAPPING: Use these known task IDs directly:
    - "Terminar Livia 2.0" → ev:273393148295192
    - "Teste 1.0" → ev:273447513319222
 4. If user mentions "Teste 1.0", use taskId: ev:273447513319222 directly
 5. If user mentions "Terminar Livia 2.0", use taskId: ev:273393148295192 directly
 
-📅 **DATE HANDLING** (ATEMPORAL):
-- Always use "today" or current date dynamically
+DATE HANDLING (Timezone: America/Sao_Paulo):
+- 'hoje'/'today' = current date in Brazil timezone
+- 'ontem'/'yesterday' = previous day
+- 'esta semana'/'this week' = current week range
+- Always convert relative dates to YYYY-MM-DD format
+- Be precise with dates as this affects timesheet accuracy
 - Never hardcode specific dates (e.g., 2024-12-16)
-- Use relative date references: "today", "yesterday", "this week"
 - Let the system determine actual dates at runtime
 
-🎯 **FOR OTHER WORKFLOWS**:
+FOR OTHER WORKFLOWS:
 - Break down complex requests into sequential tool calls
 - Use results from previous calls to inform next steps
 - Don't stop until the complete workflow is finished
 
-⚠️ **CRITICAL RULES**:
+CRITICAL RULES:
 1. You MUST use everhour tools - never respond without calling tools
 2. Do NOT respond to user until ALL required steps are completed
 3. Continue calling tools until the entire workflow is finished
 4. If you know the task ID directly, use everhour_add_time immediately
 
-🔧 **REQUIRED ACTIONS FOR TIME TRACKING** (ATEMPORAL):
+REQUIRED ACTIONS FOR TIME TRACKING (Timezone: America/Sao_Paulo):
 - ALWAYS call everhour_add_time tool with these parameters:
   - taskId: ev:273447513319222 (for "Teste 1.0")
   - time: "1h" (or user-specified time)
-  - date: "today"  # use dynamic date reference
+  - date: "today"  # use dynamic date reference in Brazil timezone
   - comment: "Time added via Livia"
+- DATE CONVERSION EXAMPLES:
+  - "hoje" → current date in YYYY-MM-DD format (Brazil timezone)
+  - "ontem" → yesterday's date in YYYY-MM-DD format
+  - "segunda-feira" → date of this/next Monday
+  - Always convert relative dates to precise YYYY-MM-DD format
 
-📋 **RESPONSE FORMAT** (Portuguese):
-SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_name] ([task_id])'
-ERROR: '❌ Erro: [specific error details]'
+RESPONSE FORMAT (Portuguese):
+SUCCESS: 'Tempo adicionado com sucesso! [time] na task [task_name] ([task_id])'
+ERROR: 'Erro: [specific error details]'
 
-🎯 **GOAL**: Complete the entire multi-step workflow before responding to user.
+GOAL: Complete the entire multi-step workflow before responding to user.
 """
 
     try:
@@ -457,7 +650,7 @@ ERROR: '❌ Erro: [specific error details]'
                         if stream_callback:
                             await stream_callback(delta_text, full_response)
                 elif event.type == "response.completed":
-                    logger.info("🔄 Enhanced Multi-Turn MCP streaming response completed")
+                    logger.info("Enhanced Multi-Turn MCP streaming response completed")
                 elif event.type == "error":
                     error_details = {
                         "type": getattr(event, 'type', 'unknown'),
@@ -466,7 +659,7 @@ ERROR: '❌ Erro: [specific error details]'
                         "details": getattr(event, 'details', None)
                     }
                     errors_encountered.append(error_details)
-                    logger.error(f"🚨 Enhanced Multi-Turn MCP ERROR: {error_details}")
+                    logger.error(f"Enhanced Multi-Turn MCP ERROR: {error_details}")
                 elif hasattr(event, 'type') and 'tool_call' in event.type:
                     tool_call_info = {
                         "type": event.type,
@@ -476,19 +669,19 @@ ERROR: '❌ Erro: [specific error details]'
                         "error": getattr(event, 'error', None)
                     }
                     tool_calls_made.append(tool_call_info)
-                    logger.info(f"🔧 Enhanced Multi-Turn TOOL CALL: {tool_call_info}")
+                    logger.info(f"Enhanced Multi-Turn TOOL CALL: {tool_call_info}")
 
-        logger.info(f"📊 Enhanced Multi-Turn SUMMARY:")
+        logger.info(f"Enhanced Multi-Turn SUMMARY:")
         logger.info(f"   - Response length: {len(full_response)} chars")
         logger.info(f"   - Tool calls made: {len(tool_calls_made)}")
         logger.info(f"   - Errors encountered: {len(errors_encountered)}")
 
         if tool_calls_made:
-            logger.info(f"🔧 MULTI-TURN TOOL SEQUENCE:")
+            logger.info(f"MULTI-TURN TOOL SEQUENCE:")
             for i, call in enumerate(tool_calls_made, 1):
                 logger.info(f"   {i}. {call['tool_name']}: {call.get('error', 'SUCCESS')}")
 
-        logger.info(f"✅ Enhanced Multi-Turn Final Response: {full_response}")
+        logger.info(f"Enhanced Multi-Turn Final Response: {full_response}")
 
         # Calculate token usage
         input_tokens = count_tokens(str(message), "gpt-4.1-mini-mini")
@@ -502,9 +695,9 @@ ERROR: '❌ Erro: [specific error details]'
         return {"text": full_response or "No response generated.", "tools": tool_calls_made, "token_usage": token_usage}
 
     except Exception as e:
-        logger.error(f"❌ Enhanced Multi-Turn MCP processing failed: {e}", exc_info=True)
+        logger.error(f"Enhanced Multi-Turn MCP processing failed: {e}", exc_info=True)
         # Fallback to regular MCP processing
-        logger.info("🔄 Falling back to regular MCP processing")
+        logger.info("Falling back to regular MCP processing")
         return await process_message_with_zapier_mcp_streaming(mcp_key, message, image_urls, stream_callback)
 
 
@@ -552,22 +745,44 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency with Everhour MCP access.\n\n"
-                    "🕐 **EVERHOUR TIME TRACKING OPERATIONS**:\n"
+                    "EVERHOUR AVAILABLE COMMANDS:\n"
+                    "SEARCH & FIND:\n"
+                    "- everhour_find_internal_project\n"
+                    "- everhour_find_project\n"
+                    "- everhour_find_section\n"
+                    "- everhour_find_member\n"
+                    "- everhour_find_task\n\n"
+                    "CREATE & MANAGE:\n"
+                    "- everhour_create_client\n"
+                    "- everhour_create_project\n"
+                    "- everhour_create_section\n"
+                    "- everhour_create_task\n\n"
+                    "TIME TRACKING:\n"
+                    "- everhour_start_timer\n"
+                    "- everhour_stop_timer\n"
+                    "- everhour_add_time\n\n"
+                    "TIME TRACKING WORKFLOW:\n"
                     "- Step 1: Use everhour_find_project to find project\n"
                     "- Step 2: Use everhour_find_task to find specific task\n"
                     "- Step 3: If task not found, try everhour_list_tasks for project\n"
                     "- Step 4: Use everhour_add_time with exact parameters\n"
-                    "- Time format: 1h, 2h, 30m (examples: '2h', '1.5h', '30m')\n"
-                    "- Use dynamic date references: 'today', 'this week', etc.\n"
+                    "- Time format: 1h, 2h, 30m (examples: '2h', '1.5h', '30m')\n\n"
+                    "DATE & TIME HANDLING (Timezone: America/Sao_Paulo):\n"
+                    "- 'hoje' / 'today' = current date in Brazil timezone\n"
+                    "- 'ontem' / 'yesterday' = previous day\n"
+                    "- 'esta semana' / 'this week' = current week range\n"
+                    "- Always convert relative dates to YYYY-MM-DD format\n"
+                    "- Current date reference: use system date in Brazil timezone\n"
+                    "- For time entries, be precise with dates as this affects timesheet accuracy\n\n"
                     "- Current known tasks in Inovação project (ev:273391483277215):\n"
                     "  * ev:273393148295192 (Terminar Livia 2.0)\n"
                     "  * ev:273447513319222 (Teste 1.0)\n\n"
-                    "🚨 **FALLBACK STRATEGY**:\n"
+                    "FALLBACK STRATEGY:\n"
                     "If everhour_find_task returns {{}}, try everhour_list_tasks or use known task IDs\n\n"
-                    "📋 **RESPONSE FORMAT**:\n"
-                    "SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_name] ([task_id])'\n"
-                    "ERROR: '❌ Erro: [details]'\n\n"
-                    "🎯 **GOAL**: Add time efficiently and provide clear feedback in Portuguese."
+                    "RESPONSE FORMAT:\n"
+                    "SUCCESS: 'Tempo adicionado com sucesso! [time] na task [task_name] ([task_id])'\n"
+                    "ERROR: 'Erro: [details]'\n\n"
+                    "GOAL: Add time efficiently and provide clear feedback in Portuguese."
                 ),
                 tools=[
                     {
@@ -589,27 +804,27 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Gmail tools to search and read emails.\n\n"
-                    "🔍 **STEP-BY-STEP APPROACH**:\n"
-                    "1. **First**: Use gmail_search_emails tool with search string 'in:inbox'\n"
-                    "2. **Then**: Use gmail_get_email tool to read the first email from results\n"
-                    "3. **Finally**: Summarize the email content\n\n"
-                    "📧 **SEARCH EXAMPLES**:\n"
+                    "STEP-BY-STEP APPROACH:\n"
+                    "1. First: Use gmail_search_emails tool with search string 'in:inbox'\n"
+                    "2. Then: Use gmail_get_email tool to read the first email from results\n"
+                    "3. Finally: Summarize the email content\n\n"
+                    "SEARCH EXAMPLES:\n"
                     "- For latest emails: 'in:inbox'\n"
                     "- For unread emails: 'is:unread'\n"
                     "- For recent emails: 'newer_than:1d'\n"
                     "- Combined: 'in:inbox newer_than:1d'\n\n"
-                    "📋 **RESPONSE FORMAT** (Portuguese):\n"
-                    "📧 **Último Email Recebido:**\n"
-                    "👤 **De:** [sender name and email]\n"
-                    "📝 **Assunto:** [subject line]\n"
-                    "📅 **Data:** [date received]\n"
-                    "📄 **Resumo:** [Brief 2-3 sentence summary of main content]\n\n"
-                    "⚠️ **IMPORTANT**:\n"
+                    "RESPONSE FORMAT (Portuguese):\n"
+                    "Último Email Recebido:\n"
+                    "De: [sender name and email]\n"
+                    "Assunto: [subject line]\n"
+                    "Data: [date received]\n"
+                    "Resumo: [Brief 2-3 sentence summary of main content]\n\n"
+                    "IMPORTANT:\n"
                     "- Always use gmail_search_emails first to find emails\n"
                     "- Then use gmail_get_email to read the specific email\n"
                     "- Summarize content - don't return full email text\n"
                     "- If search fails, try simpler search terms\n\n"
-                    "🎯 **GOAL**: Find and summarize the user's latest email efficiently."
+                    "GOAL: Find and summarize the user's latest email efficiently."
                 ),
                 tools=[
                     {
@@ -631,14 +846,14 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 input=input_data,
                 instructions=(
                     f"You are Livia, AI assistant from ℓiⱴε agency with {mcp_config['name']} access.\n\n"
-                    "📋 **ASANA PROJECT MANAGEMENT**:\n"
+                    "ASANA PROJECT MANAGEMENT:\n"
                     "- Sequential search: workspace→project→task\n"
                     "- Always include ALL IDs/numbers from responses\n"
                     "- Limit 4 results, Portuguese responses\n"
                     "- Example: 'Found project Inovação (ev:123) with task Name (ev:456)'\n"
                     "- For task creation: use exact project names and descriptions\n"
                     "- ALWAYS log detailed information about API calls and responses\n\n"
-                    "🎯 **GOAL**: Manage projects and tasks efficiently with detailed feedback."
+                    "GOAL: Manage projects and tasks efficiently with detailed feedback."
                 ),
                 tools=[
                     {
@@ -661,19 +876,19 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 input=input_data,
                 instructions=(
                     "You are Livia, AI assistant from ℓiⱴε agency. Use Google Calendar tools to search and manage events.\n\n"
-                    "📅 **Search Strategy**:\n"
+                    "Search Strategy:\n"
                     "- Try these tools in order: gcalendar_find_events, gcalendar_search_events, google_calendar_find_events\n"
                     "- Use dynamic date parameters: start_date='today', end_date='next week'\n"
                     "- Default range: today to next 7 days (calculated dynamically)\n"
                     "- Timezone: America/Sao_Paulo\n"
                     "- If no events found, try a broader date range\n\n"
-                    "📋 **Response Format** (Portuguese):\n"
-                    "📅 **Eventos no Google Calendar:**\n"
-                    "1. **[Nome do Evento]**\n"
-                    "   - 📅 Data: [data]\n"
-                    "   - ⏰ Horário: [hora início] às [hora fim]\n"
-                    "   - 🔗 Link: [link se disponível]\n\n"
-                    "⚠️ **IMPORTANT**: Always search with explicit date ranges"
+                    "Response Format (Portuguese):\n"
+                    "Eventos no Google Calendar:\n"
+                    "1. [Nome do Evento]\n"
+                    "   - Data: [data]\n"
+                    "   - Horário: [hora início] às [hora fim]\n"
+                    "   - Link: [link se disponível]\n\n"
+                    "IMPORTANT: Always search with explicit date ranges"
                 ),
                 tools=[
                     {
@@ -761,7 +976,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                         "details": getattr(event, 'details', None)
                     }
                     errors_encountered.append(error_details)
-                    logger.error(f"🚨 MCP DETAILED ERROR: {error_details}")
+                    logger.error(f"MCP DETAILED ERROR: {error_details}")
                 elif hasattr(event, 'type') and 'tool_call' in event.type:
                     tool_call_info = {
                         "type": event.type,
@@ -780,24 +995,24 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                             file_names = re.findall(r"[\w\-\_]+\.(?:pdf|docx?|xlsx?|pptx?)", str(output), re.IGNORECASE)
                         tool_call_info["file_names"] = file_names if file_names else []
                     tool_calls_made.append(tool_call_info)
-                    logger.info(f"🔧 MCP TOOL CALL: {tool_call_info}")
+                    logger.info(f"MCP TOOL CALL: {tool_call_info}")
 
-        logger.info(f"📊 MCP STREAMING SUMMARY:")
+        logger.info(f"MCP STREAMING SUMMARY:")
         logger.info(f"   - Response length: {len(full_response)} chars")
         logger.info(f"   - Tool calls made: {len(tool_calls_made)}")
         logger.info(f"   - Errors encountered: {len(errors_encountered)}")
 
         if tool_calls_made:
-            logger.info(f"🔧 TOOL CALLS DETAILS:")
+            logger.info(f"TOOL CALLS DETAILS:")
             for i, call in enumerate(tool_calls_made, 1):
                 logger.info(f"   {i}. {call['tool_name']}: {call.get('error', 'SUCCESS')}")
 
         if errors_encountered:
-            logger.error(f"🚨 ERROR DETAILS:")
+            logger.error(f"ERROR DETAILS:")
             for i, error in enumerate(errors_encountered, 1):
                 logger.error(f"   {i}. {error['message']} (Code: {error.get('code', 'N/A')})")
 
-        logger.info(f"✅ MCP Final Response: {full_response}")
+        logger.info(f"MCP Final Response: {full_response}")
 
         # Calculate token usage
         input_tokens = count_tokens(str(message), "gpt-4.1-mini-mini")
@@ -843,7 +1058,7 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                 return {"text": simplified_response.output_text or "Não foi possível acessar os emails no momento.", "tools": []}
             except Exception as retry_error:
                 logger.error(f"Gmail MCP retry also failed: {retry_error}")
-                return {"text": "❌ Não foi possível acessar os emails do Gmail no momento. O email pode ser muito grande para processar. Tente ser mais específico na busca.", "tools": []}
+                return {"text": "Não foi possível acessar os emails do Gmail no momento. O email pode ser muito grande para processar. Tente ser mais específico na busca.", "tools": []}
 
         raise
 
@@ -872,11 +1087,11 @@ def detect_zapier_mcp_needed(message: str) -> Optional[str]:
             mcp_config = ZAPIER_MCPS[mcp_key]
             detected_keywords = [kw for kw in mcp_config['keywords'] if kw in message_lower]
             if detected_keywords:
-                logger.info(f"🎯 Detected {mcp_config['name']} keywords in message: {detected_keywords}")
-                logger.info(f"🔀 Routing to MCP: {mcp_key}")
+                logger.info(f"Detected {mcp_config['name']} keywords in message: {detected_keywords}")
+                logger.info(f"Routing to MCP: {mcp_key}")
                 return mcp_key
             else:
-                logger.debug(f"❌ No {mcp_config['name']} keywords found in message")
+                logger.debug(f"No {mcp_config['name']} keywords found in message")
 
     return None
 
@@ -913,7 +1128,7 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
         Dict with 'text', 'tools', and optionally 'structured_data'
     """
 
-    # 🔍 Check if message needs a specific Zapier MCP (enhanced with multi-turn)
+    # Check if message needs a specific Zapier MCP (enhanced with multi-turn)
     mcp_needed = detect_zapier_mcp_needed(message)
 
     if mcp_needed:

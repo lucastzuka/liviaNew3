@@ -44,10 +44,10 @@ echo "   - ⚡ Streaming em Tempo Real"
 echo "   - 📋 9 MCPs Zapier (Asana, Google Drive, etc.)"
 echo ""
 
-# Ativa ambiente conda base (Python 3.12)
-echo "🔧 Ativando ambiente conda base (Python 3.12)..."
+# Ativa ambiente conda livia-chatbot (Python 3.11+)
+echo "🔧 Ativando ambiente conda livia-chatbot (Python 3.11+)..."
 source /opt/homebrew/Caskroom/miniconda/base/etc/profile.d/conda.sh
-conda activate base
+conda activate livia-chatbot
 
 # Verifica versão do Python
 PYTHON_VERSION=$(python --version 2>&1)

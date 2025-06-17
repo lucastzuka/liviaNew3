@@ -2,6 +2,9 @@
 openai-agents>=0.0.11
 openai>=1.0.0
 
+# Model Context Protocol
+mcp>=1.0.0
+
 # Slack SDK and Bolt framework
 slack-bolt>=1.18.0
 slack-sdk>=3.26.0

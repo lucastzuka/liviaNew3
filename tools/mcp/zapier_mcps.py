@@ -17,7 +17,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-gdrive",
         "keywords": ["google drive", "drive", "gdrive"],
         "priority": 1,
-        "description": "📁 **Google Drive**: buscar, listar, criar e gerenciar arquivos e pastas"
+        "description": "Google Drive: buscar, listar, criar e gerenciar arquivos e pastas"
     },
     "mcpEverhour": {
         "name": "Zapier mcpEverhour",
@@ -26,7 +26,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-mcpeverhour",
         "keywords": ["everhour"],
         "priority": 2,
-        "description": "⏰ **mcpEverhour**: controle de tempo, timesheet e rastreamento de horas"
+        "description": "mcpEverhour: controle de tempo, timesheet e rastreamento de horas"
     },
     "mcpGmail": {
         "name": "Zapier mcpGmail",
@@ -35,7 +35,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-mcpgmail",
         "keywords": ["gmail"],
         "priority": 3,
-        "description": "📧 **mcpGmail**: enviar, ler e gerenciar emails"
+        "description": "mcpGmail: enviar, ler e gerenciar emails"
     },
     "mcpAsana": {
         "name": "Zapier mcpAsana",
@@ -44,7 +44,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-mcpasana",
         "keywords": ["asana"],
         "priority": 4,
-        "description": "📋 **mcpAsana**: gerenciar projetos, tarefas e workspaces"
+        "description": "mcpAsana: gerenciar projetos, tarefas e workspaces"
     },
     "mcpGoogleCalendar": {
         "name": "Zapier mcpGoogleCalendar",
@@ -53,7 +53,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-mcpgooglecalendar",
         "keywords": ["calendar"],
         "priority": 5,
-        "description": "📅 **mcpGoogleCalendar**: criar e gerenciar eventos, reuniões e compromissos"
+        "description": "mcpGoogleCalendar: criar e gerenciar eventos, reuniões e compromissos"
     },
     "mcpGoogleDocs": {
         "name": "Zapier mcpGoogleDocs",
@@ -62,7 +62,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-mcpgoogledocs",
         "keywords": ["docs"],
         "priority": 6,
-        "description": "📝 **mcpGoogleDocs**: criar, editar e gerenciar documentos de texto"
+        "description": "mcpGoogleDocs: criar, editar e gerenciar documentos de texto"
     },
     "mcpGoogleSheets": {
         "name": "Zapier mcpGoogleSheets",
@@ -71,7 +71,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-mcpgooglesheets",
         "keywords": ["sheets"],
         "priority": 7,
-        "description": "📊 **mcpGoogleSheets**: criar, editar e gerenciar planilhas"
+        "description": "mcpGoogleSheets: criar, editar e gerenciar planilhas"
     },
     "mcpSlack": {
         "name": "Zapier mcpSlack",
@@ -80,7 +80,7 @@ ZAPIER_MCPS = {
         "server_label": "zapier-mcpslack",
         "keywords": ["slack"],
         "priority": 8,
-        "description": "💬 **mcpSlack**: enviar mensagens para outros workspaces"
+        "description": "mcpSlack: enviar mensagens para outros workspaces"
     }
 }
 

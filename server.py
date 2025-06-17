@@ -121,6 +121,7 @@ def should_retry_error(error: Exception) -> bool:
 load_dotenv()
 
 from agent import (
+    create_agent_with_mcp_servers,
     create_agent,
     process_message,
 )
@@ -186,10 +187,10 @@ def log_startup():
 
 def log_message_received(user_id, channel_id, text):
     clean_logger.info("─" * 60)
-    clean_logger.info(f"📩 NOVA MENSAGEM")
-    clean_logger.info(f"   👤 Usuário: {user_id}")
-    clean_logger.info(f"   📍 Canal: {channel_id}")
-    clean_logger.info(f"   💬 Texto: {text[:100]}{'...' if len(text) > 100 else ''}")
+    clean_logger.info(f"NOVA MENSAGEM")
+    clean_logger.info(f"   Usuário: {user_id}")
+    clean_logger.info(f"   Canal: {channel_id}")
+    clean_logger.info(f"   Texto: {text[:100]}{'...' if len(text) > 100 else ''}")
 
 def log_bot_response(response_text, tools_used=None):
     clean_logger.info(f"🤖 RESPOSTA LIVIA:")
@@ -247,7 +248,7 @@ SHOW_AGENT_LOGS = False             # Set to True to see detailed agent logs
 # --- Funções de Segurança ---
 async def is_channel_allowed(channel_id: str, user_id: str, app_client) -> bool:
     """
-    🔒 STRICT DEVELOPMENT SECURITY: ONLY allows channel C059NNLU3E1
+    STRICT DEVELOPMENT SECURITY: ONLY allows channel C059NNLU3E1
     BLOCKS ALL other channels, DMs, groups, and private channels.
     """
     if DEVELOPMENT_MODE:
@@ -255,12 +256,12 @@ async def is_channel_allowed(channel_id: str, user_id: str, app_client) -> bool:
         if channel_id in ALLOWED_CHANNELS:
             # Only log allowed channels in debug mode
             if SHOW_DEBUG_LOGS:
-                logger.debug(f"✅ SECURITY: Channel {channel_id} ALLOWED (development channel)")
+                logger.debug(f"SECURITY: Channel {channel_id} ALLOWED (development channel)")
             return True
         else:
             # Only show security blocks if explicitly enabled
             if SHOW_SECURITY_BLOCKS:
-                logger.warning(f"🚫 SECURITY: Channel {channel_id} with user {user_id} - BLOCKED (development mode)")
+                logger.warning(f"SECURITY: Channel {channel_id} with user {user_id} - BLOCKED (development mode)")
             return False
     else:
         # Production mode (when DEVELOPMENT_MODE = False)
@@ -1692,9 +1693,9 @@ async def initialize_agent():
     logger.info("Initializing Livia Agent (using direct Slack API)...")
 
     try:
-        # Create the agent with async call
-        agent = await create_agent()
-        logger.info("Livia agent successfully initialized.")
+        # Create the agent with MCP servers (unified OpenAI Agents SDK approach)
+        agent = await create_agent_with_mcp_servers()
+        logger.info("Livia agent successfully initialized with MCP servers.")
 
     except Exception as e:
         logger.error(f"Failed to initialize agent: {e}", exc_info=True)
