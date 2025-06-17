@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Zapier MCP configurations for Livia Slack Chatbot
-------------------------------------------------
-Centralized configuration for all Zapier MCP integrations.
+Zapier MCP Configurations
+------------------------
+Centralized configuration for all remote MCP integrations via Zapier.
+Includes URLs, API keys, keywords, and priority order for detection.
 """
 
 from typing import Optional, Tuple
 
-# Zapier MCP configurations
+# Configuration dictionary for all Zapier MCP servers
 ZAPIER_MCPS = {
     "google_drive": {
         "name": "Zapier Google Drive MCP",
@@ -97,21 +98,22 @@ PRIORITY_ORDER = [
 
 def get_mcp_by_keywords(message: str) -> Optional[Tuple[str, dict]]:
     """
-    Detect which MCP should handle the message based on keywords.
-    Returns (mcp_name, mcp_config) or None if no match.
+    Detect which MCP should handle message based on keyword matching.
+    Uses priority order to avoid conflicts between similar keywords.
+    Returns (mcp_name, mcp_config) or None if no match found.
     """
     message_lower = message.lower()
-    
-    # Check in priority order (most specific first)
+
+    # Check MCPs in priority order to handle overlapping keywords
     for mcp_name in PRIORITY_ORDER:
         mcp_config = ZAPIER_MCPS[mcp_name]
         keywords = mcp_config["keywords"]
-        
-        # Check if any keyword matches
+
+        # Return first matching MCP based on priority
         for keyword in keywords:
             if keyword in message_lower:
                 return mcp_name, mcp_config
-    
+
     return None
 
 def get_all_mcps() -> dict:

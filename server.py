@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Slack Socket Mode Server for Livia Chatbot
-------------------------------------------
-Handles Slack events and manages bot responses with anti-loop protection.
+Servidor Slack Socket Mode para o Chatbot Livia
+-----------------------------------------------
+Servidor principal usando Slack Bolt com Socket Mode para comunicação em tempo real.
+Inclui respostas em streaming, cache de prompts e restrições de segurança.
+Responde apenas quando mencionado na primeira mensagem de threads.
 """
 
 import os
@@ -20,6 +22,16 @@ import tiktoken
 from collections import defaultdict
 from dotenv import load_dotenv
 
+# Error handling imports
+import openai
+from openai import APIError, APITimeoutError, RateLimitError, APIConnectionError
+import time
+
+# Error handling imports
+import openai
+from openai import APIError, APITimeoutError, RateLimitError, APIConnectionError
+import time
+
 
 def count_tokens(text: str, model: str = "gpt-4o") -> int:
     """Return token count for text using tiktoken."""
@@ -29,7 +41,83 @@ def count_tokens(text: str, model: str = "gpt-4o") -> int:
         enc = tiktoken.get_encoding("cl100k_base")
     return len(enc.encode(text))
 
-# Load environment variables from .env file
+# --- Better Error Handling ---
+def get_user_friendly_error_message(error: Exception) -> str:
+    """
+    Converte erros técnicos em mensagens amigáveis para o usuário.
+    Baseado no ChatGPT-in-Slack para melhor experiência do usuário.
+    """
+    error_str = str(error).lower()
+
+    # OpenAI API specific errors
+    if isinstance(error, APITimeoutError):
+        return "⏱️ A resposta está demorando mais que o esperado. Tente novamente em alguns segundos."
+
+    elif isinstance(error, RateLimitError):
+        return "🚦 Muitas solicitações simultâneas. Aguarde um momento e tente novamente."
+
+    elif isinstance(error, APIConnectionError):
+        return "🌐 Problema de conexão com os serviços da OpenAI. Verificando conexão..."
+
+    elif isinstance(error, APIError):
+        if "context_length_exceeded" in error_str or "token" in error_str:
+            return "📝 Conversa muito longa. Comece uma nova thread para continuar."
+        elif "model" in error_str and "not found" in error_str:
+            return "🤖 Modelo temporariamente indisponível. Tentando modelo alternativo..."
+        else:
+            return f"🔧 Erro da API OpenAI: {str(error)[:100]}..."
+
+    # Network and connection errors
+    elif "timeout" in error_str or "timed out" in error_str:
+        return "⏱️ Timeout na operação. Tente novamente em alguns segundos."
+
+    elif "connection" in error_str or "network" in error_str:
+        return "🌐 Problema de rede. Verificando conexão..."
+
+    elif "ssl" in error_str or "certificate" in error_str:
+        return "🔒 Problema de certificado SSL. Tentando reconectar..."
+
+    # Slack API errors
+    elif "slack" in error_str:
+        if "rate_limited" in error_str:
+            return "🚦 Limite de taxa do Slack atingido. Aguarde um momento."
+        elif "channel_not_found" in error_str:
+            return "📍 Canal não encontrado ou sem permissão de acesso."
+        else:
+            return f"💬 Erro do Slack: {str(error)[:100]}..."
+
+    # Memory and resource errors
+    elif "memory" in error_str or "out of" in error_str:
+        return "💾 Recursos insuficientes. Tente uma solicitação menor."
+
+    # Permission errors
+    elif "permission" in error_str or "unauthorized" in error_str or "forbidden" in error_str:
+        return "🔐 Sem permissão para esta operação. Verifique as configurações."
+
+    # Generic fallback
+    else:
+        return f"❌ Erro inesperado: {str(error)[:100]}... Tente novamente ou contate o suporte."
+
+def should_retry_error(error: Exception) -> bool:
+    """
+    Determina se um erro deve ser tentado novamente automaticamente.
+    """
+    error_str = str(error).lower()
+
+    # Retry for temporary issues
+    retry_conditions = [
+        isinstance(error, (APITimeoutError, APIConnectionError)),
+        "timeout" in error_str,
+        "connection" in error_str,
+        "network" in error_str,
+        "rate_limited" in error_str,
+        "temporarily unavailable" in error_str,
+        "service unavailable" in error_str
+    ]
+
+    return any(retry_conditions)
+
+# Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
 
 from agent import (
@@ -39,14 +127,14 @@ from agent import (
 from tools import ImageProcessor, image_generator
 from slack_formatter import format_message_for_slack
 
-# --- Logging Setup ---
-# 🔇 ULTRA CLEAN TERMINAL: Only show essential bot interactions
+# --- Configuração de Logging ---
+# 🔇 TERMINAL LIMPO: Exibir apenas interações essenciais do bot
 logging.basicConfig(
     level=logging.CRITICAL, format="%(message)s"  # Only show CRITICAL messages with clean format
 )
 logger = logging.getLogger(__name__)
 
-# Silence ALL framework logs completely - set to CRITICAL to hide DEBUG/INFO/WARNING
+# Silencia TODOS os logs do framework completamente - define como CRITICAL para ocultar DEBUG/INFO/WARNING
 logging.getLogger("slack_bolt").setLevel(logging.CRITICAL)
 logging.getLogger("slack_bolt.AsyncApp").setLevel(logging.CRITICAL)
 logging.getLogger("slack_bolt.middleware").setLevel(logging.CRITICAL)
@@ -61,21 +149,25 @@ logging.getLogger("openai._base_client").setLevel(logging.CRITICAL)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 logging.getLogger("agent").setLevel(logging.CRITICAL)
 
-# Disable all slack_bolt loggers at the root level
+# Desabilita todos os loggers do slack_bolt no nível root
 for name in logging.root.manager.loggerDict:
     if name.startswith('slack_bolt'):
         logging.getLogger(name).setLevel(logging.CRITICAL)
         logging.getLogger(name).disabled = True
 
-# Set root logging level to CRITICAL to suppress all DEBUG/INFO/WARNING
+# Define nível root de logging como CRITICAL para suprimir DEBUG/INFO/WARNING
 logging.getLogger().setLevel(logging.CRITICAL)
 
-# Create a completely disabled logger for slack_bolt
+# Cria um logger totalmente desabilitado para slack_bolt
 slack_bolt_disabled_logger = logging.getLogger("slack_bolt_disabled")
 slack_bolt_disabled_logger.setLevel(logging.CRITICAL)
 slack_bolt_disabled_logger.disabled = True
 
-# Custom clean logger for bot interactions only
+# Sistema de cache de prompts para reduzir custos de API em consultas repetidas
+prompt_cache = {}
+PROMPT_CACHE_LIMIT = 100  # Maximum cached responses before cleanup
+
+# Logger limpo customizado apenas para interações do bot
 clean_logger = logging.getLogger("livia_clean")
 clean_logger.setLevel(logging.INFO)
 clean_handler = logging.StreamHandler()
@@ -83,7 +175,7 @@ clean_handler.setFormatter(logging.Formatter("%(message)s"))
 clean_logger.addHandler(clean_handler)
 clean_logger.propagate = False
 
-# 🎨 Visual logging functions for clean terminal output
+# 🎨 Funções de logging visual para terminal limpo
 def log_startup():
     clean_logger.info("=" * 60)
     clean_logger.info("🚀 LIVIA SLACK CHATBOT - INICIADO COM SUCESSO")
@@ -112,11 +204,11 @@ def log_error(error_msg):
     clean_logger.info(f"   {error_msg}")
     clean_logger.info("")
 
-# Global Variables
+# Variáveis Globais
 # TODO: SLACK_INTEGRATION_POINT - Variáveis globais para integração com Slack
 agent = None  # Agente OpenAI principal
 
-# Concurrency semaphore for multi-user handling
+# Semáforo de concorrência para múltiplos usuários
 import math
 try:
     max_concurrency = int(os.environ.get("LIVIA_MAX_CONCURRENCY", "5"))
@@ -147,12 +239,12 @@ DEVELOPMENT_MODE = True             # Set to False for production
 ALLOWED_USERS = set()               # NO DMs allowed in development mode
 ALLOWED_DM_CHANNELS = set()         # NO DMs allowed in development mode
 
-# 🔇 CLEAN LOGGING: Only show actual bot interactions, hide security blocks
+# 🔇 LOG LIMPO: Exibe apenas interações reais do bot, oculta blocos de segurança
 SHOW_SECURITY_BLOCKS = False       # Set to True to see all security blocks in terminal
 SHOW_DEBUG_LOGS = False             # Set to True to see debug logs
 SHOW_AGENT_LOGS = False             # Set to True to see detailed agent logs
 
-# --- Security Functions ---
+# --- Funções de Segurança ---
 async def is_channel_allowed(channel_id: str, user_id: str, app_client) -> bool:
     """
     🔒 STRICT DEVELOPMENT SECURITY: ONLY allows channel C059NNLU3E1
@@ -196,23 +288,23 @@ async def is_channel_allowed(channel_id: str, user_id: str, app_client) -> bool:
             logger.warning(f"SECURITY: Channel {channel_id} with user {user_id} - BLOCKED")
         return False
 
-# --- Server Class ---
+# --- Classe do Servidor ---
 class SlackSocketModeServer:
-    """Handles Slack connection and event processing."""
+    """Trata conexão do Slack e processamento de eventos."""
     def __init__(self):
-        """Initializes the server, checks env vars, sets up Bolt App."""
-        # Check required environment variables
+        """Inicializa o servidor, verifica variáveis de ambiente e configura o Bolt App."""
+        # Verifica variáveis de ambiente necessárias
         required_vars = ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"]
         missing_vars = [var for var in required_vars if var not in os.environ]
 
         if missing_vars:
-            raise ValueError(f"Missing required environment variables: {missing_vars}")
+            raise ValueError(f"Variáveis de ambiente necessárias ausentes: {missing_vars}")
 
         try:
             ssl_context = ssl.create_default_context(cafile=certifi.where())
-            logger.info(f"Using CA bundle from certifi: {certifi.where()}")
+            logger.info(f"Usando CA bundle do certifi: {certifi.where()}")
         except Exception as e:
-            logger.error(f"Failed to create SSL context using certifi: {e}", exc_info=True)
+            logger.error(f"Erro ao criar contexto SSL usando certifi: {e}", exc_info=True)
             ssl_context = ssl.create_default_context()
             logger.warning("Falling back to default SSL context.")
 
@@ -244,32 +336,66 @@ class SlackSocketModeServer:
 
 
 
+    # --- Context Window Management ---
+    def _manage_context_window(self, messages: list, model: str, max_tokens_for_response: int = 4000) -> list:
+        """
+        Remove mensagens antigas automaticamente quando contexto fica muito cheio.
+        Mantém sempre as mensagens mais recentes + margem para resposta.
+        """
+        if not messages:
+            return messages
+
+        context_limit = MODEL_CONTEXT_LIMITS.get(model, 128000)
+        max_context_tokens = context_limit - max_tokens_for_response - 1000  # Margem de segurança
+
+        # Calcular tokens das mensagens (do mais recente para o mais antigo)
+        messages_with_tokens = []
+        total_tokens = 0
+
+        for msg in reversed(messages):  # Começar pelas mais recentes
+            msg_text = f"[{msg.get('username', 'User')}]: {msg.get('text', '')}"
+            msg_tokens = count_tokens(msg_text, model)
+
+            if total_tokens + msg_tokens <= max_context_tokens:
+                messages_with_tokens.insert(0, msg)  # Inserir no início para manter ordem
+                total_tokens += msg_tokens
+            else:
+                # Contexto cheio, parar de adicionar mensagens antigas
+                break
+
+        removed_count = len(messages) - len(messages_with_tokens)
+        if removed_count > 0:
+            logger.info(f"🧹 Context management: Removed {removed_count} old messages to fit context window")
+            logger.info(f"📊 Keeping {len(messages_with_tokens)} recent messages ({total_tokens} tokens)")
+
+        return messages_with_tokens
+
     # --- Thread History Fetching Method ---
     async def _fetch_thread_history(self, channel_id: str, thread_ts: str) -> Optional[str]:
-        """Fetches and formats thread history."""
+        """Busca e formata o histórico da thread com gerenciamento automático de contexto."""
         try:
             if SHOW_DEBUG_LOGS:
-                logger.debug(f"Fetching history for thread {channel_id}/{thread_ts}...")
+                logger.debug(f"Buscando histórico para thread {channel_id}/{thread_ts}...")
 
-            # Get thread replies
+            # Get thread replies (aumentar limite para pegar mais histórico)
             response = await self.app.client.conversations_replies(
                 channel=channel_id,
                 ts=thread_ts,
-                limit=50  # Limit to last 50 messages
+                limit=100  # Buscar mais mensagens, depois filtrar por contexto
             )
 
             if not response["ok"]:
-                logger.warning(f"Failed to fetch thread history: {response.get('error', 'Unknown error')}")
+                logger.warning(f"Erro ao buscar histórico da thread: {response.get('error', 'Erro desconhecido')}")
                 return None
 
             messages = response.get("messages", [])
             if not messages:
                 return None
 
-            # Format the thread history
-            formatted_history = "Thread History:\n"
+            # Preparar mensagens com informações de usuário
+            formatted_messages = []
             for msg in messages:
-                user_id = msg.get("user", "Unknown")
+                user_id = msg.get("user", "Desconhecido")
                 text = msg.get("text", "")
 
                 # Get user info for better formatting
@@ -279,12 +405,26 @@ class SlackSocketModeServer:
                 except:
                     username = user_id
 
-                formatted_history += f"[{username}]: {text}\n"
+                formatted_messages.append({
+                    "username": username,
+                    "text": text,
+                    "ts": msg.get("ts", "")
+                })
+
+            # Aplicar gerenciamento de contexto (manter mensagens mais recentes)
+            global agent
+            model = agent.model if agent else "gpt-4o-mini"
+            managed_messages = self._manage_context_window(formatted_messages, model)
+
+            # Format the final thread history
+            formatted_history = "Histórico da Thread:\n"
+            for msg in managed_messages:
+                formatted_history += f"[{msg['username']}]: {msg['text']}\n"
 
             return formatted_history
 
         except Exception as e:
-            logger.error(f"Error fetching thread history: {e}", exc_info=True)
+            logger.error(f"Erro ao buscar histórico da thread: {e}", exc_info=True)
             return None
 
     # --- Streaming Message Processing & Response Method ---
@@ -294,10 +434,10 @@ class SlackSocketModeServer:
         use_thread_history: bool = True, user_id: str = None
     ):
         """
-        Sends message to agent and posts streaming response to Slack.
-        Implements:
-        - Static ":hourglass_flowing_sand: Pensando..." message replaced by tags + response
-        - Header tag in format `⛭TagName` at the top of all responses
+        Envia mensagem para o agente e posta resposta em streaming no Slack.
+        Implementa:
+        - Mensagem estática ":hourglass_flowing_sand: Pensando..." substituída por tags + resposta
+        - Tag de cabeçalho no formato `⛭TagName` no topo de todas as respostas
         """
         global agent, agent_semaphore
         if not agent:
@@ -356,8 +496,8 @@ class SlackSocketModeServer:
             # --- Cumulative Tag System ---
             def derive_cumulative_tags(tool_calls, audio_files, image_urls, user_message=None, final_response=None):
                 """
-                Build cumulative tags showing all technologies used in the response.
-                Format: `⛭ gpt-4.1` `Vision` `WebSearch` etc.
+                Constrói tags cumulativas mostrando todas as tecnologias usadas na resposta.
+                Formato: `⛭ gpt-4.1` `Vision` `WebSearch` etc.
                 """
                 tags = []
 
@@ -685,15 +825,37 @@ class SlackSocketModeServer:
 
             except Exception as e:
                 logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)
+
+                # Get user-friendly error message
+                user_error_msg = get_user_friendly_error_message(e)
+
+                # Retry logic for temporary errors
+                if should_retry_error(e) and not hasattr(self, '_retry_count'):
+                    self._retry_count = 1
+                    logger.info(f"🔄 Retrying due to temporary error: {type(e).__name__}")
+                    await asyncio.sleep(2)  # Wait 2 seconds before retry
+
+                    try:
+                        # Retry the operation once
+                        return await self._process_and_respond_streaming(
+                            text, say, channel_id, thread_ts_for_reply,
+                            image_urls, audio_files, use_thread_history, user_id
+                        )
+                    except Exception as retry_error:
+                        logger.error(f"Retry failed: {retry_error}")
+                        user_error_msg = get_user_friendly_error_message(retry_error)
+                    finally:
+                        delattr(self, '_retry_count')
+
                 try:
                     if 'message_ts' in locals():
                         await self.app.client.chat_update(
                             channel=original_channel_id,
                             ts=message_ts,
-                            text=f"Sorry, I encountered an error: {str(e)}"
+                            text=user_error_msg
                         )
                     else:
-                        await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                        await say(text=user_error_msg, channel=original_channel_id, thread_ts=thread_ts_for_reply)
                 except:
                     await say(text=f"Sorry, I encountered an error: {str(e)}", channel=original_channel_id, thread_ts=thread_ts_for_reply)
             finally:
@@ -780,7 +942,7 @@ class SlackSocketModeServer:
 
                 # --- Cumulative Tag System for Non-Streaming ---
                 def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
-                    """Build cumulative tags for non-streaming responses."""
+                    """Constrói tags cumulativas para respostas não-streaming."""
                     tags = ["gpt-4.1"]  # Always start with model
 
                     # Add Vision if images are being processed
@@ -910,6 +1072,19 @@ class SlackSocketModeServer:
                 # Format as: `⛭ gpt-4.1` `Vision` etc.
                 tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
                 header_prefix = f"{tag_display}\n\n"
+
+                # Check prompt cache for repeated queries
+                cache_key = f"{text}_{len(image_urls) if image_urls else 0}"
+                if cache_key in prompt_cache:
+                    logger.info(f"Cache HIT for message: {text[:50]}...")
+                    cached_response = prompt_cache[cache_key]
+                    await self.app.client.chat_update(
+                        channel=original_channel_id,
+                        ts=message_ts,
+                        text=f"`⛭ Cached` `⛭ gpt-4.1`\n\n{cached_response}"
+                    )
+                    return
+
                 logger.info(
                     f"[{original_channel_id}-{thread_ts_for_reply}-{user_id}] Processing message via Livia agent..."
                 )
@@ -956,12 +1131,23 @@ class SlackSocketModeServer:
                     ts=message_ts,
                     text=formatted_response
                 )
+
+                # Save response to cache for future reuse
+                if not image_urls and len(text_resp) < 2000:  # Cache only simple text responses
+                    prompt_cache[cache_key] = text_resp
+                    if len(prompt_cache) > PROMPT_CACHE_LIMIT:
+                        prompt_cache.popitem(last=False)  # Remove oldest entry
+                    logger.info(f"Cached response for: {text[:50]}...")
             except Exception as e:
                 logger.error(f"Error during Livia agent processing: {e}", exc_info=True)
+
+                # Get user-friendly error message
+                user_error_msg = get_user_friendly_error_message(e)
+
                 await self.app.client.chat_update(
                     channel=original_channel_id,
                     ts=message_ts,
-                    text=f"Sorry, I encountered an error: {str(e)}"
+                    text=user_error_msg
                 )
             finally:
                 # Clean up processing protection
@@ -1492,13 +1678,13 @@ class SlackSocketModeServer:
             """Handle reaction added events - acknowledge to prevent warnings."""
             logger.debug("Reaction added event acknowledged")
 
-    # --- Server Start Method ---
+    # --- Método de Inicialização do Servidor ---
     async def start(self):
         """Starts the Socket Mode server asynchronously."""
         logger.info("Starting Slack Socket Mode server (async)...")
         await self.socket_mode_handler.start_async()
 
-# --- Agent Initialization and Cleanup Functions ---
+# --- Funções de Inicialização e Limpeza do Agente ---
 async def initialize_agent():
     """Initializes the Livia agent (without MCP Slack local - using direct API)."""
     global agent
@@ -1506,8 +1692,8 @@ async def initialize_agent():
     logger.info("Initializing Livia Agent (using direct Slack API)...")
 
     try:
-        # Create the agent (sem MCP Slack local)
-        agent = create_agent()  # create_agent() is not async
+        # Create the agent with async call
+        agent = await create_agent()
         logger.info("Livia agent successfully initialized.")
 
     except Exception as e:
@@ -1527,7 +1713,7 @@ async def cleanup_agent():
     agent = None
     logger.info("Agent cleanup completed.")
 
-# --- Main Execution Logic ---
+# --- Lógica Principal de Execução ---
 async def async_main():
     """Main asynchronous entry point."""
     logger.info("Starting Livia Slack Chatbot...")

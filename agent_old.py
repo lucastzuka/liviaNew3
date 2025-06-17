@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Livia - Slack Chatbot Agent Definition
---------------------------------------
-Defines Livia, an intelligent chatbot agent for Slack using OpenAI Agents SDK and API Responses.
-Responds only in threads that mention the bot in the first message.
-Includes tools: file_search, web_search, image vision, and MCP tools.
-Enhanced with Structured Outputs for reliable JSON schema adherence.
+Livia - Definição do Agente Chatbot para Slack
+----------------------------------------------
+Define a Livia, um agente chatbot inteligente para Slack usando OpenAI Agents SDK e API Responses.
+Responde apenas em threads que mencionam o bot na primeira mensagem.
+Inclui ferramentas: file_search, web_search, visão de imagem e ferramentas MCP.
+Aprimorado com Outputs Estruturados para aderência confiável ao schema JSON.
 """
 
 import logging
@@ -15,15 +15,15 @@ from typing import List, Optional
 import tiktoken
 from dotenv import load_dotenv
 
-# OpenAI Agents SDK components
+# Componentes do OpenAI Agents SDK
 from agents import Agent, Runner, gen_trace_id, trace, WebSearchTool, ItemHelpers, FileSearchTool, HostedMCPTool
 
-# Load environment variables from .env file
+# Carrega variáveis de ambiente do arquivo .env
 env_path = Path('.') / '.env'
 if env_path.exists():
     load_dotenv(dotenv_path=env_path)
 
-# Configure logging
+# Configura logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -504,19 +504,20 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
 
 def detect_zapier_mcp_needed(message: str) -> Optional[str]:
     """
-    Detect which Zapier MCP is needed based on message keywords.
-    Uses priority-based detection to handle overlapping keywords.
-
+    Detect which Zapier MCP is needed based on message keywords.    """
+    Detecta qual MCP do Zapier é necessário com base nas palavras-chave da mensagem.
+    
     Args:
-        message: User message to analyze
-
+        message: Mensagem do usuário para análise
+    
     Returns:
-        MCP key if detected, None otherwise
+        Chave do MCP se detectada, None caso contrário
     """
     message_lower = message.lower()
 
-    # Priority order: More specific services first to avoid conflicts
+    # Ordem de prioridade: Serviços mais específicos primeiro para evitar conflitos
     priority_order = ["mcpEverhour", "mcpAsana", "mcpGmail", "mcpGoogleDocs", "mcpGoogleSheets", "mcpGoogleCalendar", "mcpSlack", "google_drive"]
+{{ ... }}
 
     for mcp_key in priority_order:
         if mcp_key in ZAPIER_MCPS:
