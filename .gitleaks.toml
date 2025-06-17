@@ -1,0 +1,30 @@
+title = "Livia Gitleaks Configuration"
+description = "Detect hardcoded secrets (OpenAI, Zapier, etc) in codebase"
+
+[allowlist]
+description = "Allowlist for files and patterns"
+files = []
+
+[[rules]]
+id = "openai-key"
+description = "OpenAI sk- key"
+regex = '''sk-[A-Za-z0-9]{16,}'''
+tags = ["key", "OpenAI"]
+
+[[rules]]
+id = "zapier-base64-key"
+description = "Zapier base64 key with colon"
+regex = '''\b[A-Za-z0-9+/=]{16,}:[A-Za-z0-9+/=]{16,}\b'''
+tags = ["key", "zapier", "base64"]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)(api[_-]?key|token)["'\s:=>]{0,20}[A-Za-z0-9-_=]{16,}'''
+tags = ["key", "generic"]
+
+[[rules]]
+id = "example-placeholder"
+description = "Ignore example/placeholder lines"
+regex = '''your-(openai|zapier|mcp)[-\w]*-api-key'''
+allowlist = { regexes = [".env.example"] }

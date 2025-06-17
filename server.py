@@ -12,6 +12,9 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 
+from security_utils import setup_global_logging_redaction
+setup_global_logging_redaction()
+
 import slack_bolt
 from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
 from slack_bolt.app.async_app import AsyncApp

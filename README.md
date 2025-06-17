@@ -94,3 +94,39 @@ LIVIA_USE_STRUCTURED_OUTPUTS=true
 - **OpenAI Agents SDK**: Orquestração de agentes com **streaming nativo** + **FileSearchTool**
 - **OpenAI Responses API**: Para MCPs remotos com **streaming**
 - **Zapier Remote MCPs**: Sistema modular de automação
+
+```
+
+## Security
+
+### Secret Management
+
+- **No secrets in code**: All sensitive API keys (e.g., Zapier MCP integrations) are now loaded from environment variables only.  
+- **Setup**: Copy `.env.example` to `.env` and fill in each required `ZAPIER_*_API_KEY` variable for every integration you use.
+- **Never commit `.env` or real keys**: Only placeholders should exist in `.env.example`.
+
+### Logging Redaction
+
+- All log output is automatically filtered to redact secrets using patterns for OpenAI (`sk-...`) and Zapier/base64 keys.
+- The filter is applied globally at startup (see `security_utils.py` and usage in both `server.py` and `agent.py`).
+- If a secret appears in any log message, it is replaced by `***REDACTED***`.
+
+### Pre-commit Secret Scanning
+
+- This project ships with a [gitleaks](https://github.com/gitleaks/gitleaks) config (`.gitleaks.toml`) to prevent accidental commits of API keys or secrets.
+- **Recommended**: Add gitleaks as a pre-commit hook in your workflow:
+  ```
+  pre-commit install
+  ```
+  or run manually before committing:
+  ```
+  gitleaks detect --source .
+  ```
+
+### Updating Secrets
+
+- To rotate or update any secret, simply change it in your environment or `.env` file. No code changes are needed.
+- If you add new MCPs, add corresponding `ZAPIER_<SERVICE>_API_KEY` variables and update `.env.example`.
+- **OpenAI Agents SDK**: Orquestração de agentes com **streaming nativo** + **FileSearchTool**
+- **OpenAI Responses API**: Para MCPs remotos com **streaming**
+- **Zapier Remote MCPs**: Sistema modular de automação
