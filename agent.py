@@ -414,8 +414,21 @@ If everhour_find_task returns empty results ({{}}), try these alternatives:
   - date: "today"  # use dynamic date reference
   - comment: "Time added via Livia"
 
+📋 **EVERHOUR ADD TIME RESPONSE PARSING**:
+- A resposta de sucesso é um objeto JSON com chaves numéricas (ex: "0"), cada valor é um objeto de entrada de tempo.
+- Extraia e use:
+    • result.task.id  (ex: "ev:273495125360070")
+    • result.task.name  (ex: "Teste 3.0")
+    • result.timeChange  OU derive horas de result.time (segundos)
+    • result.currentTime  OU result.task.totalTimeFormatted para o novo total da task
+- Use esses quatro elementos para construir a mensagem amigável:
+  "✅ Tempo adicionado com sucesso! ⏰ {{timeChange}} na task {{task.name}} ({{task.id}}) — total agora {{currentTime}}."
+- Prefira timeChange; se ausente, converta result.time (segundos) para horas/minutos.
+- Nunca mostre o JSON bruto ao usuário; apenas a mensagem amigável.
+- Se a resposta vier vazia ou com erro, use o template de erro já definido.
+
 📋 **RESPONSE FORMAT** (Portuguese):
-SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_name] ([task_id])'
+SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [timeChange] na task [task_name] ([task_id]) — total agora [currentTime]'
 ERROR: '❌ Erro: [specific error details]'
 
 🎯 **GOAL**: Complete the entire multi-step workflow before responding to user.
@@ -564,8 +577,20 @@ async def process_message_with_zapier_mcp_streaming(mcp_key: str, message: str, 
                     "  * ev:273447513319222 (Teste 1.0)\n\n"
                     "🚨 **FALLBACK STRATEGY**:\n"
                     "If everhour_find_task returns {{}}, try everhour_list_tasks or use known task IDs\n\n"
+                    "📋 **EVERHOUR ADD TIME RESPONSE PARSING**:\n"
+                    "- A resposta de sucesso é um objeto JSON com chaves numéricas (ex: \"0\"), cada valor é um objeto de entrada de tempo.\n"
+                    "- Extraia e use:\n"
+                    "    • result.task.id  (ex: \"ev:273495125360070\")\n"
+                    "    • result.task.name  (ex: \"Teste 3.0\")\n"
+                    "    • result.timeChange  OU derive horas de result.time (segundos)\n"
+                    "    • result.currentTime  OU result.task.totalTimeFormatted para o novo total da task\n"
+                    "- Use esses quatro elementos para construir a mensagem amigável:\n"
+                    "  \"✅ Tempo adicionado com sucesso! ⏰ {timeChange} na task {task.name} ({task.id}) — total agora {currentTime}.\"\n"
+                    "- Prefira timeChange; se ausente, converta result.time (segundos) para horas/minutos.\n"
+                    "- Nunca mostre o JSON bruto ao usuário; apenas a mensagem amigável.\n"
+                    "- Se a resposta vier vazia ou com erro, use o template de erro já definido.\n\n"
                     "📋 **RESPONSE FORMAT**:\n"
-                    "SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [time] na task [task_name] ([task_id])'\n"
+                    "SUCCESS: '✅ Tempo adicionado com sucesso! ⏰ [timeChange] na task [task_name] ([task_id]) — total agora [currentTime]'\n"
                     "ERROR: '❌ Erro: [details]'\n\n"
                     "🎯 **GOAL**: Add time efficiently and provide clear feedback in Portuguese."
                 ),
