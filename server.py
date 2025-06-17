@@ -232,6 +232,7 @@ MODEL_CONTEXT_LIMITS = {
     "gpt-4.1-mini": 128000,
     "gpt-4.1-mini-mini": 128000,
     "gpt-4o-mini": 128000,
+    "o3-mini": 128000,
 }
 
 # Unified Agents SDK configuration - all MCPs now use native multi-turn execution
@@ -433,9 +434,16 @@ class SlackSocketModeServer:
 
     # --- Streaming Message Processing & Response Method ---
     async def _process_and_respond_streaming(
-        self, text: str, say: slack_bolt.Say, channel_id: str, thread_ts_for_reply: Optional[str] = None,
-        image_urls: Optional[List[str]] = None, audio_files: Optional[List[dict]] = None,
-        use_thread_history: bool = True, user_id: str = None
+        self,
+        text: str,
+        say: slack_bolt.Say,
+        channel_id: str,
+        thread_ts_for_reply: Optional[str] = None,
+        image_urls: Optional[List[str]] = None,
+        audio_files: Optional[List[dict]] = None,
+        use_thread_history: bool = True,
+        user_id: str = None,
+        model_override: Optional[str] = None,
     ):
         """
         Envia mensagem para o agente e posta resposta em streaming no Slack.
@@ -444,11 +452,18 @@ class SlackSocketModeServer:
         - Tag de cabeçalho no formato `⛭TagName` no topo de todas as respostas
         """
         global agent, agent_semaphore
-        if not agent:
+        current_agent = agent
+        if model_override:
+            import copy
+            current_agent = copy.deepcopy(agent)
+            current_agent.model = model_override
+
+        if not current_agent:
             logger.error("Livia agent not ready.")
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
             return
 
+        model_name = current_agent.model
         original_channel_id = channel_id
         if not await is_channel_allowed(channel_id, user_id or "unknown", self.app.client):
             return
@@ -506,7 +521,7 @@ class SlackSocketModeServer:
                 tags = []
 
                 # Always start with the model
-                tags.append("gpt-4.1-mini")
+                tags.append(model_name)
 
                 # Add Vision if images are being processed
                 if image_urls:
@@ -637,7 +652,7 @@ class SlackSocketModeServer:
 
             # --- Determine initial cumulative tags (heuristic) ---
             def get_initial_cumulative_tags():
-                initial_tags = ["gpt-4.1-mini"]  # Always start with model
+                initial_tags = [model_name]
 
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -730,7 +745,7 @@ class SlackSocketModeServer:
                         detected_tools.extend(tool_calls_detected)
                         # Update header based on cumulative tags
                         cumulative_tags = derive_cumulative_tags(detected_tools, audio_files, processed_image_urls, user_message=text, final_response=full_text)
-                        # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
+                        # Format as: `⛭ {model_name}` `Vision` `WebSearch`
                         tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(cumulative_tags)])
                         current_header_prefix = f"{tag_display}\n\n"
 
@@ -768,7 +783,7 @@ class SlackSocketModeServer:
                             logger.warning(f"Failed to update streaming message: {update_error}")
 
                 # Agent streaming with unified Agents SDK: { text, tools, structured_data? }
-                response = await process_message(agent, context_input, processed_image_urls, stream_callback)
+                response = await process_message(current_agent, context_input, processed_image_urls, stream_callback)
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
                 structured_data = response.get("structured_data") if isinstance(response, dict) else None
@@ -786,7 +801,7 @@ class SlackSocketModeServer:
 
                 # Compute header_prefix_final based on tools actually used (cumulative)
                 final_cumulative_tags = derive_cumulative_tags(tool_calls, audio_files, processed_image_urls, user_message=text, final_response=text_resp)
-                # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
+                # Format as: `⛭ {model_name}` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
 
@@ -797,7 +812,7 @@ class SlackSocketModeServer:
                 total_tokens = input_tokens + output_tokens
                 thread_key = thread_ts_for_reply or original_channel_id
                 thread_token_usage[thread_key] += total_tokens
-                context_limit = MODEL_CONTEXT_LIMITS.get(agent.model, 128000)
+                context_limit = MODEL_CONTEXT_LIMITS.get(model_name, 128000)
                 percent = (thread_token_usage[thread_key] / context_limit) * 100
 
                 # Add memory limit warning only when reaching limit (100%+)
@@ -870,14 +885,27 @@ class SlackSocketModeServer:
 
     # --- Message Processing & Response Method ---
     async def _process_and_respond(
-        self, text: str, say: slack_bolt.Say, channel_id: str, thread_ts_for_reply: Optional[str] = None,
-        image_urls: Optional[List[str]] = None, use_thread_history: bool = True, user_id: str = None
+        self,
+        text: str,
+        say: slack_bolt.Say,
+        channel_id: str,
+        thread_ts_for_reply: Optional[str] = None,
+        image_urls: Optional[List[str]] = None,
+        use_thread_history: bool = True,
+        user_id: str = None,
+        model_override: Optional[str] = None,
     ):
         """
         Synchronous (non-streaming) response with static ":hourglass_flowing_sand: Pensando..." message replaced by tags + response.
         """
         global agent, agent_semaphore
-        if not agent:
+        current_agent = agent
+        if model_override:
+            import copy
+            current_agent = copy.deepcopy(agent)
+            current_agent.model = model_override
+
+        if not current_agent:
             logger.error("Livia agent not ready.")
             await say(text="Livia is starting up, please wait.", channel=channel_id, thread_ts=thread_ts_for_reply)
             return
@@ -947,7 +975,7 @@ class SlackSocketModeServer:
                 # --- Cumulative Tag System for Non-Streaming ---
                 def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
                     """Constrói tags cumulativas para respostas não-streaming."""
-                    tags = ["gpt-4.1-mini"]  # Always start with model
+                    tags = [model_name]
 
                     # Add Vision if images are being processed
                     if image_urls:
@@ -1058,7 +1086,7 @@ class SlackSocketModeServer:
                     return tags
 
                 def get_initial_tags_non_streaming():
-                    initial_tags = ["gpt-4.1-mini"]  # Always start with model
+                    initial_tags = [model_name]
 
                     image_generation_keywords = [
                         "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
@@ -1073,7 +1101,7 @@ class SlackSocketModeServer:
                     return initial_tags
 
                 initial_tags = get_initial_tags_non_streaming()
-                # Format as: `⛭ gpt-4.1-mini` `Vision` etc.
+                # Format as: `⛭ {model_name}` `Vision` etc.
                 tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(initial_tags)])
                 header_prefix = f"{tag_display}\n\n"
 
@@ -1085,7 +1113,7 @@ class SlackSocketModeServer:
                     await self.app.client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
-                        text=f"`⛭ Cached` `⛭ gpt-4.1-mini`\n\n{cached_response}"
+                        text=f"`⛭ Cached` `⛭ {model_name}`\n\n{cached_response}"
                     )
                     return
 
@@ -1101,12 +1129,12 @@ class SlackSocketModeServer:
                 else:
                     logger.info("No images detected in this message")
 
-                response = await process_message(agent, context_input, processed_image_urls, None)
+                response = await process_message(current_agent, context_input, processed_image_urls, None)
 
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []
                 final_cumulative_tags = derive_cumulative_tags_non_streaming_with_response(tool_calls, [], processed_image_urls, text_resp, text)
-                # Format as: `⛭ gpt-4.1-mini` `Vision` `WebSearch`
+                # Format as: `⛭ {model_name}` `Vision` `WebSearch`
                 final_tag_display = " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(final_cumulative_tags)])
                 header_prefix_final = f"{final_tag_display}\n\n"
 
@@ -1120,7 +1148,7 @@ class SlackSocketModeServer:
                 total_tokens = input_tokens + output_tokens
                 thread_key = thread_ts_for_reply or original_channel_id
                 thread_token_usage[thread_key] += total_tokens
-                context_limit = MODEL_CONTEXT_LIMITS.get(agent.model, 128000)
+                context_limit = MODEL_CONTEXT_LIMITS.get(model_name, 128000)
                 percent = (thread_token_usage[thread_key] / context_limit) * 100
 
                 # Add memory limit warning only when reaching limit (100%+)
@@ -1681,6 +1709,35 @@ class SlackSocketModeServer:
         async def handle_reaction_added_events(body: Dict[str, Any]):
             """Handle reaction added events - acknowledge to prevent warnings."""
             logger.debug("Reaction added event acknowledged")
+
+        @self.app.command("/pensar")
+        async def handle_pensar(ack, body, respond):
+            """Handle /pensar slash command using o3-mini model."""
+            await ack()
+
+            text = body.get("text", "").strip()
+            channel_id = body.get("channel_id")
+            user_id = body.get("user_id")
+
+            if not await is_channel_allowed(channel_id, user_id, self.app.client):
+                return
+
+            async def say_func(text: str, channel: str, thread_ts: Optional[str] = None):
+                return await self.app.client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
+
+            asyncio.create_task(
+                self._process_and_respond_streaming(
+                    text=text,
+                    say=say_func,
+                    channel_id=channel_id,
+                    thread_ts_for_reply=None,
+                    image_urls=None,
+                    audio_files=None,
+                    use_thread_history=False,
+                    user_id=user_id,
+                    model_override="o3-mini",
+                )
+            )
 
     # --- Método de Inicialização do Servidor ---
     async def start(self):
