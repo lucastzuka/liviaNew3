@@ -31,14 +31,6 @@ from agents import (
 from agents import CodeInterpreterTool
 from agents.tool import CodeInterpreter
 
-# Importa MCP Server para integração com Zapier MCPs
-try:
-    from agents.mcp.server import MCPServerSse, MCPServerSseParams
-    MCP_AVAILABLE = True
-except ImportError:
-    logger.warning("MCPServerSse not available - falling back to hybrid architecture")
-    MCP_AVAILABLE = False
-
 # Carrega variáveis de ambiente
 env_path = Path('.') / '.env'
 if env_path.exists():
@@ -47,6 +39,14 @@ if env_path.exists():
 # Configura logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Importa MCP Server para integração com Zapier MCPs
+try:
+    from agents.mcp.server import MCPServerSse, MCPServerSseParams
+    MCP_AVAILABLE = True
+except ImportError:
+    logger.warning("MCPServerSse not available - falling back to hybrid architecture")
+    MCP_AVAILABLE = False
 
 
 def count_tokens(text: str, model: str = "gpt-4o") -> int:
@@ -61,6 +61,9 @@ def count_tokens(text: str, model: str = "gpt-4o") -> int:
 
 # Import Zapier MCP configurations
 from tools.mcp.zapier_mcps import ZAPIER_MCPS
+
+# Import thinking agent tool
+from tools.thinking_agent import get_thinking_tool
 
 # Zapier MCP configuration is centralized in tools/mcp/zapier_mcps.py
 # This includes all remote MCP servers (Asana, Gmail, Google Drive, etc.)
@@ -122,8 +125,9 @@ async def create_agent_with_mcp_servers() -> Agent:
                 logger.error(f"Failed to create/connect MCP server for {mcp_config['name']}: {e}")
                 # Continue with other servers
 
-        # Core tools only (MCP tools will be added automatically by the agent)
-        core_tools = [web_search_tool, file_search_tool]
+        # Core tools including thinking agent
+        thinking_tool = get_thinking_tool()
+        core_tools = [web_search_tool, file_search_tool, thinking_tool]
 
         # Generate dynamic Zapier tools description from configuration
         zapier_descriptions = []
@@ -158,7 +162,7 @@ async def create_agent_with_mcp_servers() -> Agent:
             mcp_servers=mcp_servers,  # MCP servers will provide additional tools automatically
             instructions=(
             """<identity>
-You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilian advertising agency. You operate in Slack channels, groups, and DMs and your Slack ID is <@U057233T98A>.
+You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilian advertising agency. You operate in Slack channels, groups, and DMs.
 </identity>
 
 <communication_style>
@@ -168,7 +172,7 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 - Avoid unnecessary explanations, steps, or elaborations
 - Always respond in the same language the user communicates with you
 - Use Slack formatting: *bold*, _italic_, ~strikethrough~
-- Your Slack ID: <@U057233T98A>
+- NEVER mention yourself or use self-references in responses
 - Only mention File Search or file names when explicitly asked about documents
 - Feel free to disagree constructively to improve results
 </communication_style>
@@ -176,6 +180,7 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 <available_tools>
 - Web Search Tool: search the internet for current information
 - File Search Tool: search uploaded documents in the knowledge base
+- Deep Thinking Analysis: use +think or 'thinking' for complex analysis with o3-mini
 - Image Vision: analyze uploaded images or URLs
 - Image Generation Tool: create images with gpt-image-1
 - Code Interpreter: run short Python snippets and return the output
@@ -207,6 +212,9 @@ ELSE IF user asks about documents/files
 
 ELSE IF user asks for code execution or calculations
 → USE CODE INTERPRETER for Python snippets and computations
+
+ELSE IF user requests deep analysis, thinking, or complex problem-solving
+→ USE DEEP THINKING ANALYSIS tool with keywords: +think, thinking, análise profunda
 </search_strategy>
 
 <response_guidelines>
@@ -257,6 +265,9 @@ async def create_agent() -> Agent:
         max_num_results=5,
         include_search_results=True
     )
+
+    # Add thinking agent tool
+    thinking_tool = get_thinking_tool()
 
     # Image Generation Tool configuration
     # TODO: SLACK_INTEGRATION_POINT - Ferramenta de geração de imagem para o Slack
@@ -310,7 +321,7 @@ async def create_agent() -> Agent:
         name="Livia",
         instructions=(
             """<identity>
-You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilian advertising agency. You operate in Slack channels, groups, and DMs and your Slack ID is <@U057233T98A>.
+You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilian advertising agency. You operate in Slack channels, groups, and DMs.
 </identity>
 
 <communication_style>
@@ -320,7 +331,7 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 - Avoid unnecessary explanations, steps, or elaborations
 - Always respond in the same language the user communicates with you
 - Use Slack formatting: *bold*, _italic_, ~strikethrough~
-- Your Slack ID: <@U057233T98A>
+- NEVER mention yourself or use self-references in responses
 - Only mention File Search or file names when explicitly asked about documents
 - Feel free to disagree constructively to improve results
 </communication_style>
@@ -328,6 +339,7 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 <available_tools>
 - Web Search Tool: search the internet for current information
 - File Search Tool: search uploaded documents in the knowledge base
+- Deep Thinking Analysis: use +think or 'thinking' for complex analysis with o3-mini
 - Image Vision: analyze uploaded images or URLs
 - Image Generation Tool: create images with gpt-image-1
 - Code Interpreter: run short Python snippets and return the output
@@ -359,6 +371,9 @@ ELSE IF user asks about documents/files
 
 ELSE IF user asks for code execution or calculations
 → USE CODE INTERPRETER for Python snippets and computations
+
+ELSE IF user requests deep analysis, thinking, or complex problem-solving
+→ USE DEEP THINKING ANALYSIS tool with keywords: +think, thinking, análise profunda
 </search_strategy>
 
 <response_guidelines>
@@ -381,7 +396,7 @@ ELSE IF user asks for code execution or calculations
 """
         ),
         model="gpt-4.1-mini",  # Changed to gpt-4o for better vision support
-        tools=[web_search_tool, file_search_tool],  # CodeInterpreterTool temporarily disabled
+        tools=[web_search_tool, file_search_tool, thinking_tool],  # CodeInterpreterTool temporarily disabled
         mcp_servers=mcp_servers,
     )
     servers_info = " and ".join(server_descriptions)

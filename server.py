@@ -520,8 +520,20 @@ class SlackSocketModeServer:
                 """
                 tags = []
 
-                # Always start with the model
-                tags.append(model_name)
+                # Check if thinking tool was used to determine the correct model
+                thinking_used = False
+                if tool_calls:
+                    for call in tool_calls:
+                        name = (call.get("tool_name", "") or call.get("name", "")).lower()
+                        if "deep_thinking_analysis" in name or "thinking" in name:
+                            thinking_used = True
+                            break
+
+                # Use o3-mini if thinking tool was used, otherwise use the main model
+                if thinking_used:
+                    tags.append("o3-mini")
+                else:
+                    tags.append(model_name)
 
                 # Add Vision if images are being processed
                 if image_urls:
@@ -547,6 +559,11 @@ class SlackSocketModeServer:
                         elif name == "image_generation_tool" or tool_type == "image_generation_tool":
                             if "ImageGen" not in tags:
                                 tags.append("ImageGen")
+
+                        # Thinking Agent detection
+                        elif "deep_thinking_analysis" in name or "thinking" in name:
+                            if "Thinking" not in tags:
+                                tags.append("Thinking")
 
                         # MCP detection
                         elif "mcp" in name or "mcp" in tool_type:
@@ -652,12 +669,26 @@ class SlackSocketModeServer:
 
             # --- Determine initial cumulative tags (heuristic) ---
             def get_initial_cumulative_tags():
-                initial_tags = [model_name]
-
                 image_generation_keywords = [
                     "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
                     "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
                 ]
+
+                thinking_keywords = [
+                    "+think", "thinking", "análise profunda", "análise detalhada",
+                    "brainstorm", "brainstorming", "resolução de problema",
+                    "estratégia", "decisão", "reflexão", "pensar", "analisar",
+                    "problema complexo", "solução criativa", "insights"
+                ]
+
+                # Check if thinking will be used based on keywords
+                thinking_will_be_used = any(keyword in (text or "").lower() for keyword in thinking_keywords)
+
+                # Use o3-mini if thinking keywords detected, otherwise use main model
+                if thinking_will_be_used:
+                    initial_tags = ["o3-mini", "Thinking"]
+                else:
+                    initial_tags = [model_name]
 
                 if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
                     initial_tags.append("ImageGen")
@@ -975,7 +1006,20 @@ class SlackSocketModeServer:
                 # --- Cumulative Tag System for Non-Streaming ---
                 def derive_cumulative_tags_non_streaming(tool_calls, audio_files, image_urls):
                     """Constrói tags cumulativas para respostas não-streaming."""
-                    tags = [model_name]
+                    # Check if thinking tool was used to determine the correct model
+                    thinking_used = False
+                    if tool_calls:
+                        for call in tool_calls:
+                            name = call.get("tool_name", call.get("name", "")).lower()
+                            if "deep_thinking_analysis" in name or "thinking" in name:
+                                thinking_used = True
+                                break
+
+                    # Use o3-mini if thinking tool was used, otherwise use the main model
+                    if thinking_used:
+                        tags = ["o3-mini"]
+                    else:
+                        tags = [model_name]
 
                     # Add Vision if images are being processed
                     if image_urls:
@@ -1000,6 +1044,11 @@ class SlackSocketModeServer:
                             elif name == "image_generation_tool" or tool_type == "image_generation_tool":
                                 if "ImageGen" not in tags:
                                     tags.append("ImageGen")
+
+                            # Thinking Agent detection
+                            elif "deep_thinking_analysis" in name or "thinking" in name:
+                                if "Thinking" not in tags:
+                                    tags.append("Thinking")
 
                             # MCP detection
                             elif "mcp" in name or "mcp" in tool_type:
@@ -1086,12 +1135,26 @@ class SlackSocketModeServer:
                     return tags
 
                 def get_initial_tags_non_streaming():
-                    initial_tags = [model_name]
-
                     image_generation_keywords = [
                         "gere uma imagem", "gerar imagem", "criar imagem", "desenhe", "desenhar",
                         "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
                     ]
+
+                    thinking_keywords = [
+                        "+think", "thinking", "análise profunda", "análise detalhada",
+                        "brainstorm", "brainstorming", "resolução de problema",
+                        "estratégia", "decisão", "reflexão", "pensar", "analisar",
+                        "problema complexo", "solução criativa", "insights"
+                    ]
+
+                    # Check if thinking will be used based on keywords
+                    thinking_will_be_used = any(keyword in (text or "").lower() for keyword in thinking_keywords)
+
+                    # Use o3-mini if thinking keywords detected, otherwise use main model
+                    if thinking_will_be_used:
+                        initial_tags = ["o3-mini", "Thinking"]
+                    else:
+                        initial_tags = [model_name]
 
                     if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
                         initial_tags.append("ImageGen")
@@ -1710,34 +1773,9 @@ class SlackSocketModeServer:
             """Handle reaction added events - acknowledge to prevent warnings."""
             logger.debug("Reaction added event acknowledged")
 
-        @self.app.command("/pensar")
-        async def handle_pensar(ack, body, respond):
-            """Handle /pensar slash command using o3-mini model."""
-            await ack()
 
-            text = body.get("text", "").strip()
-            channel_id = body.get("channel_id")
-            user_id = body.get("user_id")
 
-            if not await is_channel_allowed(channel_id, user_id, self.app.client):
-                return
 
-            async def say_func(text: str, channel: str, thread_ts: Optional[str] = None):
-                return await self.app.client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
-
-            asyncio.create_task(
-                self._process_and_respond_streaming(
-                    text=text,
-                    say=say_func,
-                    channel_id=channel_id,
-                    thread_ts_for_reply=None,
-                    image_urls=None,
-                    audio_files=None,
-                    use_thread_history=False,
-                    user_id=user_id,
-                    model_override="o3-mini",
-                )
-            )
 
     # --- Método de Inicialização do Servidor ---
     async def start(self):
