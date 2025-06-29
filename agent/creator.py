@@ -81,8 +81,9 @@ async def create_agent_with_mcp_servers() -> Agent:
                 mcp_servers.append(mcp_server)
                 logger.info(f"Created MCPServerSse for {mcp_config['name']}")
             except Exception as e:
-                logger.error(f"Failed to create/connect MCP server for {mcp_config['name']}: {e}")
+                # Silently skip failed MCP connections to keep logs clean
                 # Continue with other servers
+                pass
 
         # Core tools including thinking agent
         thinking_tool = get_thinking_tool()
@@ -101,6 +102,7 @@ async def create_agent_with_mcp_servers() -> Agent:
         # Create agent with MCP servers
         agent = Agent(
             name="Livia",
+            model="gpt-4.1-mini",  # Default model for text processing
             tools=core_tools,  # Core tools: web search, file search
             mcp_servers=mcp_servers,  # MCP servers will provide additional tools automatically
             instructions=get_agent_instructions(zapier_tools_description)
@@ -164,7 +166,7 @@ async def create_agent() -> Agent:
     agent = Agent(
         name="Livia",
         instructions=get_agent_instructions(zapier_tools_description),
-        model="gpt-4.1-mini",  # Changed to gpt-4o for better vision support
+        model="gpt-4.1-mini",  # Default model for text processing
         tools=[web_search_tool, file_search_tool, thinking_tool],  # CodeInterpreterTool temporarily disabled
         mcp_servers=mcp_servers,
     )

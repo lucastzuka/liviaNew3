@@ -204,15 +204,25 @@ class EventHandlers:
                 if url:
                     image_urls.append(url)
         
-        # Check for image URLs in text
+        # Check for image URLs in text (enhanced URL detection)
         text = event.get("text", "")
-        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+\.(jpg|jpeg|png|gif|webp|bmp)'
-        found_urls = re.findall(url_pattern, text, re.IGNORECASE)
-        for url_match in found_urls:
-            # url_match is a tuple, we want the full URL
-            full_url = text[text.find(url_match[0]) - len(url_match[0]) - 8:text.find(url_match[0]) + len(url_match[1]) + 1]
-            if full_url.startswith('http'):
-                image_urls.append(full_url)
+        
+        # Pattern for image URLs (more comprehensive)
+        url_patterns = [
+            r'https?://[^\s<>]+\.(?:jpg|jpeg|png|gif|webp|bmp|tiff)(?:\?[^\s<>]*)?',  # Direct image URLs
+            r'https?://[^\s<>]*(?:imgur|flickr|instagram|twitter|facebook|ichef\.bbci)[^\s<>]*',   # Image hosting sites including BBC
+            r'https?://[^\s<>]*\.(?:com|org|net|co\.uk)/[^\s<>]*\.(?:jpg|jpeg|png|gif|webp)', # Images on websites
+            r'https?://ichef\.bbci\.co\.uk/[^\s<>]*',  # BBC image URLs specifically
+        ]
+        
+        for pattern in url_patterns:
+            found_urls = re.findall(pattern, text, re.IGNORECASE)
+            for url in found_urls:
+                # Clean up URL (remove trailing punctuation)
+                url = re.sub(r'[.,;!?]+$', '', url)
+                if url not in image_urls:
+                    image_urls.append(url)
+                    logger.info(f"Found image URL in text: {url}")
         
         return image_urls
 

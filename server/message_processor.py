@@ -45,12 +45,23 @@ class MessageProcessor:
         user_id: str = None,
         model_override: Optional[str] = None,
     ):
-        """
-        Envia mensagem para o agente e posta resposta em streaming no Slack.
+        """Envia mensagem para o agente e posta resposta em streaming no Slack.
         Implementa:
         - Mensagem estática ":hourglass_flowing_sand: Pensando..." substituída por tags + resposta
         - Tag de cabeçalho no formato `⛭TagName` no topo de todas as respostas
         """
+        # Log incoming message details
+        logger.info(f"\n{'='*60}")
+        logger.info(f"📨 NEW MESSAGE RECEIVED")
+        logger.info(f"   Channel: {channel_id}")
+        logger.info(f"   User: {user_id or 'unknown'}")
+        logger.info(f"   Thread: {thread_ts_for_reply or 'new'}")
+        logger.info(f"   Text: {text[:100]}{'...' if len(text) > 100 else ''}")
+        logger.info(f"   Images: {len(image_urls) if image_urls else 0}")
+        logger.info(f"   Audio: {len(audio_files) if audio_files else 0}")
+        logger.info(f"   Model override: {model_override or 'none'}")
+        logger.info(f"{'='*60}")
+        
         agent = get_global_agent()
         current_agent = agent
         if model_override:
@@ -180,16 +191,29 @@ class MessageProcessor:
                 )
 
                 text_with_footer = text_resp + memory_warning
+                
+                # Log final response details
+                logger.info(f"\n📤 SENDING FINAL RESPONSE")
+                logger.info(f"   Model used: {model_name}")
+                logger.info(f"   Response length: {len(text_resp)} chars")
+                logger.info(f"   Token usage: {input_tokens}+{output_tokens}={total_tokens}")
+                logger.info(f"   Header prefix: {header_prefix_final[:50]}{'...' if len(header_prefix_final) > 50 else ''}")
+                logger.info(f"   Response preview: {text_resp[:150]}{'...' if len(text_resp) > 150 else ''}")
+                
                 try:
                     formatted_response = header_prefix_final + format_message_for_slack(text_with_footer)
+                    logger.info(f"   Final formatted length: {len(formatted_response)} chars")
+                    
                     await self.app_client.chat_update(
                         channel=original_channel_id,
                         ts=message_ts,
                         text=formatted_response
                     )
+                    logger.info(f"✅ Message updated successfully in Slack")
                 except Exception as final_update_error:
                     logger.warning(f"Failed to update final message: {final_update_error}")
                     await say(text=formatted_response, channel=original_channel_id, thread_ts=thread_ts_for_reply)
+                    logger.info(f"✅ Message sent as new message in Slack")
 
                 # Extract tools used from formatted response
                 tools_used = None
@@ -198,8 +222,10 @@ class MessageProcessor:
                     tools_match = re.findall(r'`([^`]+)`', formatted_response)
                     if tools_match:
                         tools_used = " ".join(tools_match)
+                        logger.info(f"🔧 Tools detected in response: {tools_used}")
 
                 log_bot_response(formatted_response, tools_used)
+                logger.info(f"{'='*60}\n")
 
             except Exception as e:
                 logger.error(f"Error during Livia agent streaming processing: {e}", exc_info=True)

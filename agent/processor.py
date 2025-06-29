@@ -27,6 +27,7 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
     """
     Runs the agent with the given message and optional image URLs with streaming support.
     Now uses unified Agents SDK with native multi-turn execution for all MCPs.
+    Uses gpt-4o for vision processing and gpt-4.1-mini for text-only processing.
 
     Args:
         agent: The OpenAI Agent instance
@@ -39,8 +40,20 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
     """
     logger.info(f"Processing message: {message[:100]}{'...' if len(message) > 100 else ''}")
     
+    # Create vision-capable agent if images are present
     if image_urls:
-        logger.info(f"Processing {len(image_urls)} image(s)")
+        logger.info(f"Processing {len(image_urls)} image(s) with gpt-4o")
+        # Create a new agent instance with gpt-4o for vision processing
+        vision_agent = Agent(
+            name=agent.name,
+            model="gpt-4o",  # Use gpt-4o for vision processing
+            tools=agent.tools,
+            mcp_servers=agent.mcp_servers,
+            instructions=agent.instructions
+        )
+        agent = vision_agent
+    else:
+        logger.info("Processing text-only message with gpt-4.1-mini")
 
     # Check if a Zapier MCP is needed based on keywords
     mcp_key = detect_zapier_mcp_needed(message)
@@ -67,20 +80,34 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
 
     # Use native Agents SDK with streaming
     try:
-        logger.info("Using native Agents SDK with streaming")
+        model_used = agent.model
+        logger.info(f"🤖 AGENT PROCESSING - Model: {model_used}")
+        logger.info(f"📝 Message: {message[:100]}{'...' if len(message) > 100 else ''}")
         
         # Prepare input for the agent
         if image_urls:
-            # For vision processing, include images in the input
-            input_content = [{"type": "text", "text": message}]
+            logger.info(f"🖼️ Processing {len(image_urls)} images with {model_used}")
+            for i, url in enumerate(image_urls):
+                logger.info(f"   Image {i+1}: {url[:80]}{'...' if len(url) > 80 else ''}")
+            
+            # For vision processing, use the correct OpenAI Agents SDK format
+            # Based on web search results, the format should use input_text and input_image
+            content_items = [{"type": "input_text", "text": message}]
             for image_url in image_urls:
-                input_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": image_url, "detail": "low"}
+                content_items.append({
+                    "type": "input_image",
+                    "image_url": image_url,
+                    "detail": "low"
                 })
-            agent_input = input_content
+            
+            agent_input = [{
+                "role": "user",
+                "content": content_items
+            }]
+            logger.info(f"🔍 Vision input prepared: message + {len(image_urls)} images")
         else:
             agent_input = message
+            logger.info(f"💬 Text-only input prepared as string")
 
         # Create dummy callback if none provided (always use streaming internally)
         if not stream_callback:
@@ -128,8 +155,15 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
         # After streaming is complete, access final data directly from RunResultStreaming
         # The final_output and other properties are available directly on the result object
 
+        # Log final response details
+        final_text = full_response or str(result.final_output) if result.final_output else "No response generated."
+        logger.info(f"✅ RESPONSE COMPLETE - Model: {agent.model}")
+        logger.info(f"📤 Response length: {len(final_text)} chars")
+        logger.info(f"🔧 Tools used: {len(tool_calls)} ({[t.get('tool_name', 'unknown') for t in tool_calls]})")
+        logger.info(f"💬 Response preview: {final_text[:150]}{'...' if len(final_text) > 150 else ''}")
+        
         return {
-            "text": full_response or str(result.final_output) if result.final_output else "No response generated.",
+            "text": final_text,
             "tools": tool_calls,
             "token_usage": {"input": 0, "output": 0, "total": 0}  # Token usage not directly available in streaming mode
         }

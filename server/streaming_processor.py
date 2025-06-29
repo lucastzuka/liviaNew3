@@ -27,7 +27,8 @@ class StreamingProcessor:
                               final_response: Optional[str] = None, model_name: str = "gpt-4.1-mini") -> List[str]:
         """
         Constrói tags cumulativas mostrando todas as tecnologias usadas na resposta.
-        Formato: `⛭ gpt-4.1-mini` `Vision` `WebSearch` etc.
+        Formato: `⛭ modelo` `Vision` `WebSearch` etc.
+        Modelos: gpt-4.1-mini (texto), gpt-4o (visão), o3-mini (thinking)
         """
         tags = []
 
@@ -40,11 +41,13 @@ class StreamingProcessor:
                     thinking_used = True
                     break
 
-        # Use o3-mini if thinking tool was used, otherwise use the main model
+        # Determine model based on content type and tools used
         if thinking_used:
             tags.append("o3-mini")
+        elif image_urls:
+            tags.append("gpt-4o")  # Use gpt-4o for vision processing
         else:
-            tags.append(model_name)
+            tags.append(model_name)  # Default gpt-4.1-mini for text
 
         # Add Vision if images are being processed
         if image_urls:
@@ -194,11 +197,13 @@ class StreamingProcessor:
         # Check if thinking will be used based on keywords
         thinking_will_be_used = any(keyword in (text or "").lower() for keyword in thinking_keywords)
 
-        # Use o3-mini if thinking keywords detected, otherwise use main model
+        # Determine model based on content type
         if thinking_will_be_used:
             initial_tags = ["o3-mini", "Thinking"]
+        elif image_urls:
+            initial_tags = ["gpt-4o"]  # Use gpt-4o for vision processing
         else:
-            initial_tags = [model_name]
+            initial_tags = [model_name]  # Default gpt-4.1-mini for text
 
         if any(keyword in (text or "").lower() for keyword in image_generation_keywords):
             initial_tags.append("ImageGen")
@@ -210,7 +215,7 @@ class StreamingProcessor:
         return initial_tags
 
     def format_tags_display(self, tags: List[str]) -> str:
-        """Format tags as: `⛭ gpt-4.1-mini` `Vision` etc."""
+        """Format tags as: `⛭ modelo` `Vision` etc. (modelo: gpt-4.1-mini/gpt-4o/o3-mini)"""
         return " ".join([f"`⛭ {tag}`" if i == 0 else f"`{tag}`" for i, tag in enumerate(tags)])
 
     async def create_stream_callback(self, app_client, original_channel_id: str, message_ts: str, 
