@@ -165,7 +165,7 @@ class MessageProcessor:
                 )
 
                 # Agent streaming with unified Agents SDK: { text, tools, structured_data? }
-                from agent import process_message
+                from agent.processor import process_message
                 response = await process_message(current_agent, context_input, processed_image_urls, stream_callback)
                 text_resp = response.get("text") if isinstance(response, dict) else str(response)
                 tool_calls = response.get("tools") if isinstance(response, dict) else []

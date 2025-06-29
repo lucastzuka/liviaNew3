@@ -43,10 +43,6 @@ async def create_agent_with_mcp_servers() -> Agent:
 
         # Initialize core tools
         web_search_tool = WebSearchTool(search_context_size="medium")
-        # Note: CodeInterpreterTool temporarily disabled due to serialization issues
-        # code_interpreter_tool = CodeInterpreterTool(
-        #     tool_config=CodeInterpreter(container={"type": "auto"})
-        # )
 
         # Configure file search with vector store for document retrieval
         file_search_tool = FileSearchTool(
@@ -124,10 +120,7 @@ async def create_agent() -> Agent:
 
     # Initialize core tools
     web_search_tool = WebSearchTool(search_context_size="medium")
-    # Note: CodeInterpreterTool temporarily disabled due to serialization issues
-    # code_interpreter_tool = CodeInterpreterTool(
-    #     tool_config=CodeInterpreter(container={"type": "auto"})
-    # )
+
 
     # Configure file search with vector store for document retrieval
     file_search_tool = FileSearchTool(
@@ -138,16 +131,6 @@ async def create_agent() -> Agent:
 
     # Add thinking agent tool
     thinking_tool = get_thinking_tool()
-
-    # Image Generation Tool configuration
-    # TODO: SLACK_INTEGRATION_POINT - Ferramenta de geração de imagem para o Slack
-    # Configuração correta do ImageGenerationTool (temporariamente removida - erro tools[2].type)
-    # image_generation_tool = ImageGenerationTool(
-    #     tool_config={
-    #         "size": "auto",
-    #         "quality": "auto"
-    #     }
-    # )
 
     # MCP servers list (local MCPs only - Zapier MCPs via Responses API with enhanced multi-turn)
     mcp_servers = []

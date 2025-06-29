@@ -92,7 +92,7 @@ async def initialize_agent():
     logger.info("Initializing Livia Agent (using direct Slack API)...")
 
     try:
-        from agent import create_agent_with_mcp_servers
+        from agent.creator import create_agent_with_mcp_servers
         agent = await create_agent_with_mcp_servers()
         set_global_agent(agent)
         logger.info("Livia agent initialized successfully")
@@ -106,7 +106,7 @@ async def cleanup_agent():
     """Cleans up the agent resources."""
     logger.info("Cleaning up Livia agent resources...")
 
-    # TODO: Add any specific cleanup logic here if needed
+
     # For now, just reset the global agent
     set_global_agent(None)
     logger.info("Agent cleanup completed.")
@@ -152,3 +152,7 @@ def main():
         logger.info("Shutdown requested by user.")
     except Exception as e:
         logger.error(f"Error in main: {e}", exc_info=True)
+
+
+if __name__ == "__main__":
+    main()

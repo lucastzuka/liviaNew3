@@ -63,4 +63,4 @@ fi
 
 # Executa o servidor
 echo "🤖 Iniciando servidor..."
-python server.py
+python -m server.slack_server
