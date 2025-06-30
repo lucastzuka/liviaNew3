@@ -11,7 +11,7 @@ from typing import List, Optional, Dict, Any
 
 from .config import (
     get_global_agent, get_agent_semaphore, is_channel_allowed,
-    SHOW_DEBUG_LOGS
+    SHOW_DEBUG_LOGS, get_bot_user_id
 )
 from .context_manager import ContextManager
 from .streaming_processor import StreamingProcessor
@@ -32,6 +32,7 @@ class MessageProcessor:
         self.app_client = app_client
         self.context_manager = ContextManager(app_client)
         self.streaming_processor = StreamingProcessor()
+        self.bot_user_id = get_bot_user_id()
     
     async def process_and_respond_streaming(
         self,
@@ -292,3 +293,170 @@ class MessageProcessor:
         except Exception as e:
             logger.error(f"Error transcribing audio: {e}")
             return None
+
+    async def process_think_message(
+        self,
+        message: str,
+        channel_id: str,
+        user_id: str,
+        thread_ts: str,
+        say,
+        client,
+        improve_prompt: bool = False,
+        thread_history: list = None
+    ):
+        """Process a think message with sequential PromptImprover -> DeepThinking workflow."""
+        try:
+            from agents import Agent, Runner
+            
+            final_prompt = message
+            
+            # Step 1: Improve prompt if requested
+            if improve_prompt and thread_history:
+                print(f"[DEBUG] Iniciando reformulação do prompt: {message}")
+                
+                # Create GPT-4o agent for prompt improvement
+                improvement_agent = Agent(
+                    name="PromptImprover",
+                    model="gpt-4o",
+                    instructions="""
+Você é um especialista em reformular prompts para análise profunda.
+
+Sua tarefa:
+1. Reformule o prompt original deixando-o mais claro, organizado e direto
+2. Use o contexto da conversa para entender melhor o que o usuário quer analisar
+3. Mantenha o idioma original do prompt
+4. Responda APENAS com o prompt reformulado, sem explicações adicionais
+5. Torne o prompt mais específico e direcionado para análise profunda
+"""
+                )
+                
+                # Format thread history for context
+                context = "\n".join([
+                    f"Usuário: {msg.get('text', '')}" if msg.get('user') != self.bot_user_id 
+                    else f"Livia: {msg.get('text', '')}"
+                    for msg in thread_history[-10:]  # Last 10 messages for context
+                ])
+                
+                # Create input for improvement
+                improvement_input = f"Contexto da conversa:\n{context}\n\nPrompt original para reformular:\n{message}"
+                
+                # Run the improvement agent
+                improvement_result = await Runner.run(
+                    improvement_agent,
+                    input=improvement_input,
+                    max_turns=1
+                )
+                
+                final_prompt = improvement_result.final_output.strip()
+                print(f"[DEBUG] Prompt reformulado: {final_prompt}")
+            
+            # Step 2: Deep thinking with o3
+            print(f"[DEBUG] Iniciando análise profunda com o3: {final_prompt}")
+            
+            # Update message to show deep analysis is starting
+            if client:
+                await client.chat_update(
+                    channel=channel_id,
+                    ts=thread_ts,
+                    text=":brain: Analisando cuidadosamente..."
+                )
+            
+            # Create a simple o3 agent for deep thinking
+            o3_agent = Agent(
+                name="DeepThinking",
+                model="o3-mini",
+                instructions="""
+Você é um assistente especializado em análise profunda. Forneça análises abrangentes, detalhadas e bem estruturadas.
+
+Diretrizes:
+- Seja detalhado e completo na análise
+- Use estrutura clara com tópicos e subtópicos
+- Forneça insights acionáveis
+- Responda sempre no mesmo idioma da pergunta
+- Seja objetivo mas abrangente
+"""
+            )
+            
+            # Process with o3 model directly
+            result = await Runner.run(
+                o3_agent,
+                input=final_prompt,
+                max_turns=1
+            )
+            
+            # Get the final output
+            final_response = result.final_output
+            print(f"[DEBUG] Resposta do o3 (tamanho: {len(final_response)} chars)")
+            
+            # Check if message is too long for Slack (limit ~3000 chars for safety)
+            if len(final_response) > 3000:
+                # Split into smaller parts
+                parts = self._split_long_message(final_response, max_length=3000)
+                
+                # Send first part
+                first_msg = await say(
+                    text=parts[0],
+                    thread_ts=thread_ts
+                )
+                
+                # Send remaining parts as new messages (without continuation markers)
+                for part in parts[1:]:
+                    await say(
+                        text=part,
+                        thread_ts=thread_ts
+                    )
+            else:
+                # Send the complete result
+                await say(
+                    text=final_response,
+                    thread_ts=thread_ts
+                )
+            
+        except Exception as e:
+            logger.error(f"Error in process_think_message: {e}", exc_info=True)
+            await say(
+                text=f"Erro ao processar análise: {str(e)}",
+                thread_ts=thread_ts
+            )
+    
+    def _split_long_message(self, message: str, max_length: int = 3000) -> List[str]:
+        """Split a long message into smaller parts for Slack."""
+        if len(message) <= max_length:
+            return [message]
+        
+        parts = []
+        current_part = ""
+        
+        # Split by paragraphs first
+        paragraphs = message.split('\n\n')
+        
+        for paragraph in paragraphs:
+            # If adding this paragraph would exceed limit, save current part
+            if len(current_part) + len(paragraph) + 2 > max_length:
+                if current_part:
+                    parts.append(current_part.strip())
+                    current_part = paragraph
+                else:
+                    # Paragraph itself is too long, split by sentences
+                    sentences = paragraph.split('. ')
+                    for sentence in sentences:
+                        if len(current_part) + len(sentence) + 2 > max_length:
+                            if current_part:
+                                parts.append(current_part.strip())
+                                current_part = sentence
+                            else:
+                                # Sentence too long, force split
+                                while len(sentence) > max_length:
+                                    parts.append(sentence[:max_length])
+                                    sentence = sentence[max_length:]
+                                current_part = sentence
+                        else:
+                            current_part += sentence + '. '
+            else:
+                current_part += paragraph + '\n\n'
+        
+        if current_part.strip():
+            parts.append(current_part.strip())
+        
+        return parts

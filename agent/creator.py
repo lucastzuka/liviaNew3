@@ -77,6 +77,10 @@ async def create_agent_with_mcp_servers() -> Agent:
                 mcp_servers.append(mcp_server)
                 logger.info(f"Created MCPServerSse for {mcp_config['name']}")
             except Exception as e:
+                # Suppress MCP initialization errors from terminal output
+                import logging
+                mcp_logger = logging.getLogger('openai.agents')
+                mcp_logger.setLevel(logging.CRITICAL)
                 # Silently skip failed MCP connections to keep logs clean
                 # Continue with other servers
                 pass

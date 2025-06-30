@@ -32,7 +32,7 @@ class EventHandlers:
     def setup_event_handlers(self):
         """Configura todos os handlers de eventos."""
         self.app.event("message")(self.handle_message_events)
-        self.app.shortcut("livia_think")(self.handle_thinking_shortcut)
+        self.app.action("static_select-action")(self.handle_think_selection)
     
     async def handle_message_events(self, event, say, client):
         """
@@ -124,6 +124,11 @@ class EventHandlers:
             # Remove bot mention from text for processing
             clean_text = re.sub(f"<@{self.bot_user_id}>", "", text).strip()
 
+            # Check for +think command
+            if clean_text.strip().startswith("+think"):
+                await self._handle_think_command(clean_text, channel_id, user_id, thread_ts_for_reply, say, client)
+                return
+
             # Extract image URLs from message
             image_urls = self._extract_image_urls(event)
             
@@ -146,50 +151,157 @@ class EventHandlers:
             logger.error(f"Error in handle_message_events: {e}", exc_info=True)
             log_error(f"Erro no processamento de mensagem: {str(e)}")
 
-    async def handle_thinking_shortcut(self, ack, shortcut, client, say):
+    async def handle_think_selection(self, ack, body, client, say):
         """
-        Handle the thinking shortcut (+think) that opens a modal for o3 processing.
+        Handle the selection from the think improvement button.
         """
         try:
             await ack()
             
-            # Security check
-            channel_id = shortcut.get("channel", {}).get("id")
-            user_id = shortcut.get("user", {}).get("id")
+            # Get selection value
+            selected_value = body["actions"][0]["selected_option"]["value"]
+            channel_id = body["channel"]["id"]
+            user_id = body["user"]["id"]
+            message_ts = body["message"]["ts"]
             
+            # Security check
             if not await is_channel_allowed(channel_id, user_id, client):
                 return
 
-            # Open modal for thinking input
-            await client.views_open(
-                trigger_id=shortcut["trigger_id"],
-                view={
-                    "type": "modal",
-                    "callback_id": "thinking_modal",
-                    "title": {"type": "plain_text", "text": "🧠 Modo Pensamento"},
-                    "submit": {"type": "plain_text", "text": "Analisar"},
-                    "close": {"type": "plain_text", "text": "Cancelar"},
-                    "blocks": [
-                        {
-                            "type": "input",
-                            "block_id": "thinking_input",
-                            "element": {
-                                "type": "plain_text_input",
-                                "action_id": "thinking_text",
-                                "multiline": True,
-                                "placeholder": {
-                                    "type": "plain_text",
-                                    "text": "Descreva o problema ou situação que precisa de análise profunda..."
-                                }
-                            },
-                            "label": {"type": "plain_text", "text": "Análise Profunda"}
-                        }
-                    ]
-                }
+            # Get the original think message from the stored context
+            original_message = getattr(self, '_pending_think_message', None)
+            thread_history = getattr(self, '_pending_think_history', [])
+            
+            if not original_message:
+                await client.chat_update(
+                    channel=channel_id,
+                    ts=message_ts,
+                    text="❌ Sessão expirada. Tente novamente com +think."
+                )
+                return
+
+            # Determine if we should improve the prompt
+            improve_prompt = selected_value == "value-0"  # SIM - melhorar prompt
+            
+            # Update message to show processing is starting
+            if improve_prompt:
+                await client.chat_update(
+                    channel=channel_id,
+                    ts=message_ts,
+                    text="✨ Reformulando prompt..."
+                )
+            else:
+                await client.chat_update(
+                    channel=channel_id,
+                    ts=message_ts,
+                    text="🧠 Analisando profundamente..."
+                )
+
+            # Process with the new sequential flow
+            await self.message_processor.process_think_message(
+                original_message,
+                channel_id=channel_id,
+                user_id=user_id,
+                thread_ts=message_ts,
+                say=say,
+                client=client,
+                improve_prompt=improve_prompt,
+                thread_history=thread_history if improve_prompt else None
             )
+            
+            # Clean up stored context
+            self._pending_think_message = None
+            self._pending_think_history = []
 
         except Exception as e:
-            logger.error(f"Error in handle_thinking_shortcut: {e}", exc_info=True)
+            logger.error(f"Error in handle_think_selection: {e}", exc_info=True)
+            await client.chat_update(
+                channel=channel_id,
+                ts=message_ts,
+                text="❌ Erro ao processar seleção. Tente novamente."
+            )
+
+
+
+    async def _handle_think_command(self, text: str, channel_id: str, user_id: str, thread_ts: str, say, client):
+        """
+        Handle +think command by showing improvement selection button.
+        """
+        try:
+            # Extract the think message (remove +think prefix)
+            think_message = text[6:].strip()  # Remove "+think" and whitespace
+            
+            if not think_message:
+                await say("Por favor, forneça uma mensagem após o comando +think.", thread_ts=thread_ts)
+                return
+
+            # Get thread history for context
+            thread_history = await self._get_thread_history(channel_id, thread_ts, client)
+            
+            # Store the message and history for later use
+            self._pending_think_message = think_message
+            self._pending_think_history = thread_history
+            
+            # Send the selection button
+            await say(
+                text="Quer que eu melhore seu prompt antes de enviar?",
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "Quer que eu melhore seu prompt antes de enviar?"
+                        },
+                        "accessory": {
+                            "type": "static_select",
+                            "placeholder": {
+                                "type": "plain_text",
+                                "text": "...",
+                                "emoji": True
+                            },
+                            "options": [
+                                {
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "SIM ⚡",
+                                        "emoji": True
+                                    },
+                                    "value": "value-0"
+                                },
+                                {
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "Não 🚫",
+                                        "emoji": True
+                                    },
+                                    "value": "value-1"
+                                }
+                            ],
+                            "action_id": "static_select-action"
+                        }
+                    }
+                ],
+                thread_ts=thread_ts
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in _handle_think_command: {e}", exc_info=True)
+            await say("Erro ao processar comando +think.", thread_ts=thread_ts)
+
+    async def _get_thread_history(self, channel_id: str, thread_ts: str, client) -> List[Dict]:
+        """
+        Get the conversation history from the thread.
+        """
+        try:
+            response = await client.conversations_replies(
+                channel=channel_id,
+                ts=thread_ts,
+                limit=20
+            )
+            return response.get("messages", [])
+        except Exception as e:
+            logger.error(f"Error getting thread history: {e}")
+            return []
 
     def _extract_image_urls(self, event: Dict[str, Any]) -> List[str]:
         """Extract image URLs from Slack message event."""
