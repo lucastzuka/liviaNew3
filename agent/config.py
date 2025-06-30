@@ -50,8 +50,8 @@ except ImportError:
 # Import Zapier MCP configurations
 from tools.mcp.zapier_mcps import ZAPIER_MCPS
 
-# Import thinking agent tool
-from tools.thinking_agent import get_thinking_tool
+# Import thinking agent tool - removido para evitar chamadas automáticas
+# from tools.thinking_agent import get_thinking_tool
 
 
 def count_tokens(text: str, model: str = "gpt-4o") -> int:
@@ -85,7 +85,7 @@ You are Livia, an intelligent chatbot assistant working at ℓiⱴε, a Brazilia
 <available_tools>
 - Web Search Tool: search the internet for current information
 - File Search Tool: search uploaded documents in the knowledge base
-- Deep Thinking Analysis: use +think or 'thinking' for complex analysis with o3-mini
+- Deep Thinking Analysis: use +think command for complex analysis with o3-mini (manual command)
 - Image Vision: analyze uploaded images or URLs
 - Image Generation Tool: create images with gpt-image-1
 - Code Interpreter: run short Python snippets and return the output
@@ -119,7 +119,7 @@ ELSE IF user asks for code execution or calculations
 → USE CODE INTERPRETER for Python snippets and computations
 
 ELSE IF user requests deep analysis, thinking, or complex problem-solving
-→ USE DEEP THINKING ANALYSIS tool with keywords: +think, thinking, análise profunda
+→ SUGGEST using +think command for isolated o3-mini analysis
 </search_strategy>
 
 <response_guidelines>

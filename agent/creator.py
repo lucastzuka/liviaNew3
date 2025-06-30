@@ -26,7 +26,7 @@ from .config import (
     generate_zapier_tools_description,
     generate_enhanced_zapier_tools_description
 )
-from tools.thinking_agent import get_thinking_tool
+# from tools.thinking_agent import get_thinking_tool  # Removido para evitar chamadas automáticas
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,12 @@ async def create_agent_with_mcp_servers() -> Agent:
         web_search_tool = WebSearchTool(search_context_size="medium")
 
         # Configure file search with vector store for document retrieval
-        file_search_tool = FileSearchTool(
-            vector_store_ids=["vs_683e3a1ac4808191ae5e6fe24392e609"],
-            max_num_results=5,
-            include_search_results=True
-        )
+        # TEMPORARIAMENTE DESABILITADO - usando vector stores efêmeros por arquivo
+        # file_search_tool = FileSearchTool(
+        #     vector_store_ids=["vs_683e3a1ac4808191ae5e6fe24392e609"],
+        #     max_num_results=5,
+        #     include_search_results=True
+        # )
 
         # Create MCP servers for all Zapier MCPs
         mcp_servers = []
@@ -85,9 +86,8 @@ async def create_agent_with_mcp_servers() -> Agent:
                 # Continue with other servers
                 pass
 
-        # Core tools including thinking agent
-        thinking_tool = get_thinking_tool()
-        core_tools = [web_search_tool, file_search_tool, thinking_tool]
+        # Core tools
+        core_tools = [web_search_tool]  # file_search_tool temporariamente removido
 
         # Generate dynamic Zapier tools description from configuration
         zapier_tools_description = generate_zapier_tools_description()
@@ -127,14 +127,12 @@ async def create_agent() -> Agent:
 
 
     # Configure file search with vector store for document retrieval
-    file_search_tool = FileSearchTool(
-        vector_store_ids=["vs_683e3a1ac4808191ae5e6fe24392e609"],
-        max_num_results=5,
-        include_search_results=True
-    )
-
-    # Add thinking agent tool
-    thinking_tool = get_thinking_tool()
+    # TEMPORARIAMENTE DESABILITADO - usando vector stores efêmeros por arquivo
+    # file_search_tool = FileSearchTool(
+    #     vector_store_ids=["vs_683e3a1ac4808191ae5e6fe24392e609"],
+    #     max_num_results=5,
+    #     include_search_results=True
+    # )
 
     # MCP servers list (local MCPs only - Zapier MCPs via Responses API with enhanced multi-turn)
     mcp_servers = []
@@ -154,9 +152,47 @@ async def create_agent() -> Agent:
         name="Livia",
         instructions=get_agent_instructions(zapier_tools_description),
         model="gpt-4.1-mini",  # Default model for text processing
-        tools=[web_search_tool, file_search_tool, thinking_tool],  # CodeInterpreterTool temporarily disabled
+        tools=[web_search_tool],  # file_search_tool temporariamente removido, CodeInterpreterTool temporarily disabled
         mcp_servers=mcp_servers,
     )
     servers_info = " and ".join(server_descriptions)
     logger.info(f"Agent '{agent.name}' created with WebSearchTool and access to {servers_info}.")
     return agent
+
+
+async def create_agent_with_vector_store(vector_store_id: str):
+    """Cria um agente com uma vector store específica para documentos do usuário."""
+    try:
+        logger.info(f"Creating agent with custom vector store: {vector_store_id}")
+
+        # Initialize core tools
+        web_search_tool = WebSearchTool(search_context_size="medium")
+
+        # Configure file search with the new vector store
+        file_search_tool = FileSearchTool(
+            vector_store_ids=[vector_store_id],  # Use the new vector store
+            max_num_results=5,
+            include_search_results=True
+        )
+
+        # Core tools
+        core_tools = [web_search_tool, file_search_tool]
+
+        # Generate dynamic Zapier tools description from configuration
+        zapier_tools_description = generate_enhanced_zapier_tools_description()
+
+        # Create agent with updated tools
+        agent = Agent(
+            name="Livia",
+            model="gpt-4o-mini",
+            instructions=get_agent_instructions(zapier_tools_description),
+            tools=core_tools,
+            mcp_servers=[]
+        )
+
+        logger.info(f"Agent updated successfully with vector store: {vector_store_id}")
+        return agent
+
+    except Exception as e:
+        logger.error(f"Error creating agent with vector store: {e}")
+        return None

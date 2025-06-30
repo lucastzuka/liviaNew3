@@ -16,6 +16,7 @@ from .config import (
 )
 from .utils import log_message_received, log_error
 from .message_processor import MessageProcessor
+from tools.document_processor import DocumentProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class EventHandlers:
         self.message_processor = message_processor
         self.bot_user_id = get_bot_user_id()
         self.processed_messages = get_processed_messages()
+        self.document_processor = DocumentProcessor()
     
     def setup_event_handlers(self):
         """Configura todos os handlers de eventos."""
@@ -134,15 +136,20 @@ class EventHandlers:
             
             # Extract audio files from message
             audio_files = await self._extract_audio_files(event, client)
+            
+            # Extract document files from message
+            document_files = await self.document_processor.extract_document_files(event, client)
 
             # Process the message
-            await self.message_processor.process_and_respond_streaming(
+            await self.message_processor.process_message(
                 text=clean_text,
                 say=say,
+                client=client,
                 channel_id=channel_id,
                 thread_ts_for_reply=thread_ts_for_reply,
                 image_urls=image_urls,
                 audio_files=audio_files,
+                document_files=document_files,
                 use_thread_history=True,
                 user_id=user_id
             )

@@ -33,18 +33,9 @@ class StreamingProcessor:
         tags = []
 
         # Check if thinking tool was used to determine the correct model
-        thinking_used = False
-        if tool_calls:
-            for call in tool_calls:
-                name = (call.get("tool_name", "") or call.get("name", "")).lower()
-                if "deep_thinking_analysis" in name or "thinking" in name:
-                    thinking_used = True
-                    break
-
         # Determine model based on content type and tools used
-        if thinking_used:
-            tags.append("o3-mini")
-        elif image_urls:
+        # Note: thinking is handled manually via +think command
+        if image_urls:
             tags.append("gpt-4o")  # Use gpt-4o for vision processing
         else:
             tags.append(model_name)  # Default gpt-4.1-mini for text
@@ -74,10 +65,7 @@ class StreamingProcessor:
                     if "ImageGen" not in tags:
                         tags.append("ImageGen")
 
-                # Thinking Agent detection
-                elif "deep_thinking_analysis" in name or "thinking" in name:
-                    if "Thinking" not in tags:
-                        tags.append("Thinking")
+                # Note: Thinking detection removed - handled manually via +think command
 
                 # MCP detection
                 elif "mcp" in name or "mcp" in tool_type:
@@ -97,7 +85,7 @@ class StreamingProcessor:
                     elif "calendar" in name:
                         if "McpGoogleCalendar" not in tags:
                             tags.append("McpGoogleCalendar")
-                    elif "docs" in name:
+                    elif "google docs" in name.lower():
                         if "McpGoogleDocs" not in tags:
                             tags.append("McpGoogleDocs")
                     elif "sheets" in name:
@@ -159,8 +147,8 @@ class StreamingProcessor:
                 if "McpGmail" not in tags:
                     tags.append("McpGmail")
 
-            # Google Docs MCP indicators
-            docs_indicators = ["google docs", "documento", "docs", "live_codigodeeticaeconduta"]
+            # Google Docs MCP indicators - apenas para "Google Docs" específico
+            docs_indicators = ["google docs"]
             if any(indicator in combined_content for indicator in docs_indicators):
                 if "McpGoogleDocs" not in tags:
                     tags.append("McpGoogleDocs")
@@ -187,20 +175,11 @@ class StreamingProcessor:
             "faça uma imagem", "fazer imagem", "generate image", "create image", "draw"
         ]
 
-        thinking_keywords = [
-            "+think", "thinking", "análise profunda", "análise detalhada",
-            "brainstorm", "brainstorming", "resolução de problema",
-            "estratégia", "decisão", "reflexão", "pensar", "analisar",
-            "problema complexo", "solução criativa", "insights"
-        ]
-
-        # Check if thinking will be used based on keywords
-        thinking_will_be_used = any(keyword in (text or "").lower() for keyword in thinking_keywords)
+        # Note: +think is handled as manual command in event_handlers.py
+        # No automatic thinking detection to avoid unwanted calls
 
         # Determine model based on content type
-        if thinking_will_be_used:
-            initial_tags = ["o3-mini", "Thinking"]
-        elif image_urls:
+        if image_urls:
             initial_tags = ["gpt-4o"]  # Use gpt-4o for vision processing
         else:
             initial_tags = [model_name]  # Default gpt-4.1-mini for text

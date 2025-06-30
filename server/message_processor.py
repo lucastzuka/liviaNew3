@@ -6,6 +6,7 @@ Processador principal de mensagens com streaming e gerenciamento de contexto.
 """
 
 import logging
+import os
 import asyncio
 from typing import List, Optional, Dict, Any
 
@@ -15,6 +16,7 @@ from .config import (
 )
 from .context_manager import ContextManager
 from .streaming_processor import StreamingProcessor
+from tools.document_processor import DocumentProcessor
 from .utils import (
     get_user_friendly_error_message, should_retry_error,
     log_bot_response, count_tokens
@@ -33,15 +35,18 @@ class MessageProcessor:
         self.context_manager = ContextManager(app_client)
         self.streaming_processor = StreamingProcessor()
         self.bot_user_id = get_bot_user_id()
+        self.document_processor = DocumentProcessor()
     
-    async def process_and_respond_streaming(
+    async def process_message(
         self,
         text: str,
         say,
+        client,
         channel_id: str,
         thread_ts_for_reply: Optional[str] = None,
         image_urls: Optional[List[str]] = None,
         audio_files: Optional[List[dict]] = None,
+        document_files: Optional[List[dict]] = None,
         use_thread_history: bool = True,
         user_id: str = None,
         model_override: Optional[str] = None,
@@ -60,6 +65,7 @@ class MessageProcessor:
         logger.info(f"   Text: {text[:100]}{'...' if len(text) > 100 else ''}")
         logger.info(f"   Images: {len(image_urls) if image_urls else 0}")
         logger.info(f"   Audio: {len(audio_files) if audio_files else 0}")
+        logger.info(f"   Documents: {len(document_files) if document_files else 0}")
         logger.info(f"   Model override: {model_override or 'none'}")
         logger.info(f"{'='*60}")
         
@@ -108,6 +114,17 @@ class MessageProcessor:
                     context_input = f"{text}\n\n" + "\n\n".join(transcriptions)
                 else:
                     context_input = "\n\n".join(transcriptions)
+
+        # Process document files if any
+        document_summary = None
+        if document_files:
+            logger.info(f"Processing {len(document_files)} document file(s)...")
+            document_summary = await self._process_document_files(document_files, client, say, channel_id, thread_ts_for_reply)
+            if document_summary:
+                if context_input:
+                    context_input = f"{context_input}\n\n{document_summary}"
+                else:
+                    context_input = document_summary
 
         # Use thread history as context if available
         if use_thread_history and thread_ts_for_reply:
@@ -282,6 +299,95 @@ class MessageProcessor:
                 channel=channel_id, 
                 thread_ts=thread_ts
             )
+
+    async def _process_document_files(self, document_files: List[dict], client, say, channel_id: str, thread_ts: Optional[str]) -> Optional[str]:
+        """Process document files, upload to OpenAI, and update vector store."""
+        try:
+            if not document_files:
+                return None
+            
+            # Enviar mensagem de status
+            status_msg = await say(
+                text="📄 Processando documentos...",
+                channel=channel_id,
+                thread_ts=thread_ts
+            )
+            
+            # Upload dos documentos para OpenAI
+            slack_token = os.environ.get("SLACK_BOT_TOKEN")
+            uploaded_files = await self.document_processor.upload_to_openai(
+                document_files, slack_token
+            )
+            
+            if uploaded_files:
+                # Criar/atualizar vector store com os novos arquivos
+                vector_store_id = await self.document_processor.create_vector_store_with_files(
+                    uploaded_files, f"Documentos - {channel_id}"
+                )
+                
+                if vector_store_id:
+                    # Criar agente temporário com FileSearchTool para esta conversa
+                    await self._create_temporary_agent_with_vector_store(vector_store_id)
+                    
+                    # Formatar resumo dos arquivos processados
+                    summary = self.document_processor.format_upload_summary(uploaded_files)
+                    
+                    # Atualizar mensagem de status
+                    await client.chat_update(
+                        channel=channel_id,
+                        ts=status_msg["ts"],
+                        text=summary
+                    )
+                    
+                    # Retornar contexto para o agente
+                    file_names = [f["name"] for f in uploaded_files]
+                    return f"📄 O usuário enviou {len(uploaded_files)} documento(s): {', '.join(file_names)}. Os documentos foram processados e estão disponíveis para consulta via file_search."
+                else:
+                    await client.chat_update(
+                        channel=channel_id,
+                        ts=status_msg["ts"],
+                        text="❌ Erro ao criar base de conhecimento com os documentos."
+                    )
+            else:
+                await client.chat_update(
+                    channel=channel_id,
+                    ts=status_msg["ts"],
+                    text="❌ Não foi possível processar os documentos enviados."
+                )
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error processing documents: {e}")
+            if 'status_msg' in locals():
+                try:
+                    await client.chat_update(
+                        channel=channel_id,
+                        ts=status_msg["ts"],
+                        text="❌ Erro interno ao processar documentos."
+                    )
+                except:
+                    pass
+            return None
+
+    async def _create_temporary_agent_with_vector_store(self, vector_store_id: str):
+        """Cria um agente temporário com FileSearchTool para a vector store efêmera."""
+        try:
+            from .config import set_global_agent
+            from agent.creator import create_agent_with_vector_store
+            
+            logger.info(f"Criando agente temporário com vector store efêmera: {vector_store_id}")
+            
+            # Criar agente temporário com FileSearchTool para esta conversa
+            temporary_agent = await create_agent_with_vector_store(vector_store_id)
+            if temporary_agent:
+                set_global_agent(temporary_agent)
+                logger.info("✅ Agente temporário criado com FileSearchTool ativo")
+            else:
+                logger.error("❌ Falha ao criar agente temporário")
+                
+        except Exception as e:
+            logger.error(f"Erro ao criar agente temporário: {e}")
 
     async def _transcribe_audio_file(self, audio_file: Dict[str, Any]) -> Optional[str]:
         """Transcribe audio file using OpenAI Whisper."""
