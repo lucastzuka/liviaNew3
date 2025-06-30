@@ -231,17 +231,45 @@ class DocumentProcessor:
             logger.error(f"Erro ao criar vector store: {e}")
             return None
     
+    async def add_files_to_existing_vector_store(self, vector_store_id: str, 
+                                               uploaded_files: List[Dict[str, Any]]) -> Optional[str]:
+        """Adiciona arquivos a uma vector store existente."""
+        try:
+            if not uploaded_files or not vector_store_id:
+                return vector_store_id
+            
+            # Adicionar novos arquivos à vector store existente
+            file_ids = [file_info['openai_file_id'] for file_info in uploaded_files]
+            
+            await self.openai_client.vector_stores.file_batches.create(
+                vector_store_id=vector_store_id,
+                file_ids=file_ids
+            )
+            
+            logger.info(f"✅ Adicionados {len(file_ids)} arquivos ao vector store: {vector_store_id}")
+            return vector_store_id
+            
+        except Exception as e:
+            logger.error(f"Erro ao adicionar arquivos ao vector store {vector_store_id}: {e}")
+            return None
+    
     def format_upload_summary(self, uploaded_files: List[Dict[str, Any]]) -> str:
         """Formata um resumo dos arquivos enviados."""
         if not uploaded_files:
             return "❌ Nenhum documento foi processado com sucesso."
         
-        summary = f"📄 **{len(uploaded_files)} documento(s) processado(s) com sucesso:**\n\n"
-        
-        for file_info in uploaded_files:
-            size_mb = file_info['size'] / (1024 * 1024) if file_info['size'] > 0 else 0
-            summary += f"• **{file_info['name']}** ({size_mb:.1f} MB)\n"
-        
-        summary += "\n✅ Os documentos estão agora disponíveis para consulta. Você pode fazer perguntas sobre o conteúdo deles!"
-        
-        return summary
+        # Formato simplificado: apenas o nome do arquivo processado
+        if len(uploaded_files) == 1:
+            return f"Processado: {uploaded_files[0]['name']}"
+        else:
+            file_names = [f['name'] for f in uploaded_files]
+            return f"Processados: {', '.join(file_names)}"
+    
+    async def get_vector_store_file_count(self, vector_store_id: str) -> int:
+        """Retorna o número de arquivos em uma vector store."""
+        try:
+            files = await self.openai_client.vector_stores.files.list(vector_store_id=vector_store_id)
+            return len(files.data)
+        except Exception as e:
+            logger.error(f"Erro ao contar arquivos na vector store {vector_store_id}: {e}")
+            return 0

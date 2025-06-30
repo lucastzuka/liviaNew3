@@ -143,7 +143,14 @@ def log_bot_response(response_text, tools_used=None):
     clean_logger.info(f"🤖 RESPOSTA LIVIA:")
     if tools_used:
         clean_logger.info(f"   🛠️ Ferramentas: {tools_used}")
-    clean_logger.info(f"   💭 Resposta: {response_text[:150]}{'...' if len(response_text) > 150 else ''}")
+    
+    # Log the complete response, not just a preview
+    clean_logger.info(f"   💭 Resposta completa:")
+    # Split long responses into multiple lines for better readability
+    lines = response_text.split('\n')
+    for line in lines:
+        clean_logger.info(f"      {line}")
+    
     clean_logger.info("─" * 60)
     clean_logger.info("")
 

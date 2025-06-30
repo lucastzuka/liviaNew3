@@ -36,6 +36,8 @@ class MessageProcessor:
         self.streaming_processor = StreamingProcessor()
         self.bot_user_id = get_bot_user_id()
         self.document_processor = DocumentProcessor()
+        self.current_vector_store_id = None  # Track current vector store for file count
+        self.thread_vector_stores = {}  # Track vector stores by thread_ts for accumulation
     
     async def process_message(
         self,
@@ -115,7 +117,7 @@ class MessageProcessor:
                 else:
                     context_input = "\n\n".join(transcriptions)
 
-        # Process document files if any
+        # Process document files if any - WAIT for completion before proceeding
         document_summary = None
         if document_files:
             logger.info(f"Processing {len(document_files)} document file(s)...")
@@ -125,6 +127,12 @@ class MessageProcessor:
                     context_input = f"{context_input}\n\n{document_summary}"
                 else:
                     context_input = document_summary
+                logger.info(f"✅ Document processing completed. Vector store ID: {self.current_vector_store_id}")
+            else:
+                logger.warning("❌ Document processing failed or returned no summary")
+                # If document processing failed, we should still continue but without file context
+                if not context_input.strip():
+                    context_input = "O usuário enviou documentos, mas houve erro no processamento."
 
         # Use thread history as context if available
         if use_thread_history and thread_ts_for_reply:
@@ -190,10 +198,13 @@ class MessageProcessor:
                 structured_data = response.get("structured_data") if isinstance(response, dict) else None
 
                 # Compute header_prefix_final based on tools actually used (cumulative)
-                final_cumulative_tags = self.streaming_processor.derive_cumulative_tags(
-                    tool_calls, audio_files, processed_image_urls, 
-                    user_message=text, final_response=text_resp, model_name=model_name
+                print(f"🔍 DEBUG: Calling detect_tools_and_model with vector_store_id: {self.current_vector_store_id}")
+                print(f"🔍 DEBUG: tool_calls passed: {tool_calls}")
+                final_cumulative_tags = await self.streaming_processor.detect_tools_and_model(
+                    tool_calls, text_resp, processed_image_urls, audio_files, 
+                    text, model_name, self.current_vector_store_id
                 )
+                print(f"🔍 DEBUG: final_cumulative_tags: {final_cumulative_tags}")
                 # Format as: `⛭ {model_name}` `Vision` `WebSearch`
                 header_prefix_final = self.streaming_processor.format_tags_display(final_cumulative_tags) + "\n\n"
 
@@ -320,10 +331,24 @@ class MessageProcessor:
             )
             
             if uploaded_files:
-                # Criar/atualizar vector store com os novos arquivos
-                vector_store_id = await self.document_processor.create_vector_store_with_files(
-                    uploaded_files, f"Documentos - {channel_id}"
-                )
+                # Verificar se já existe um vector store para esta thread
+                thread_key = f"{channel_id}_{thread_ts or 'main'}"
+                existing_vector_store_id = self.thread_vector_stores.get(thread_key)
+                
+                if existing_vector_store_id:
+                    # Adicionar arquivos ao vector store existente
+                    vector_store_id = await self.document_processor.add_files_to_existing_vector_store(
+                        existing_vector_store_id, uploaded_files
+                    )
+                    logger.info(f"📁 Arquivos adicionados ao vector store existente: {existing_vector_store_id}")
+                else:
+                    # Criar novo vector store
+                    vector_store_id = await self.document_processor.create_vector_store_with_files(
+                        uploaded_files, f"Documentos - {channel_id}"
+                    )
+                    if vector_store_id:
+                        self.thread_vector_stores[thread_key] = vector_store_id
+                        logger.info(f"📁 Novo vector store criado para thread: {vector_store_id}")
                 
                 if vector_store_id:
                     # Criar agente temporário com FileSearchTool para esta conversa
@@ -382,6 +407,7 @@ class MessageProcessor:
             temporary_agent = await create_agent_with_vector_store(vector_store_id)
             if temporary_agent:
                 set_global_agent(temporary_agent)
+                self.current_vector_store_id = vector_store_id  # Store for file count detection
                 logger.info("✅ Agente temporário criado com FileSearchTool ativo")
             else:
                 logger.error("❌ Falha ao criar agente temporário")

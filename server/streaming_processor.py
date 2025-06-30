@@ -88,15 +88,17 @@ class StreamingProcessor:
                     elif "google docs" in name.lower():
                         if "McpGoogleDocs" not in tags:
                             tags.append("McpGoogleDocs")
-                    elif "sheets" in name:
+                    elif "sheets" in name and "google sheets" in name.lower():
                         if "McpGoogleSheets" not in tags:
                             tags.append("McpGoogleSheets")
                     elif "slack" in name:
                         if "McpSlack" not in tags:
                             tags.append("McpSlack")
 
-                # Skip file_search - it's always active (RAG)
-                # We don't show FileSearch tag since it's background functionality
+                # File Search detection - show file count when used
+                elif "file_search" in name or "file_search" in tool_type:
+                    # This will be handled separately to show file count
+                    pass
 
         # Enhanced detection: Check response content for web search indicators (more specific)
         if final_response and "WebSearch" not in tags:
@@ -192,6 +194,74 @@ class StreamingProcessor:
             initial_tags.append("Vision")
 
         return initial_tags
+
+    async def detect_tools_and_model(self, tool_calls, final_response: str, 
+                                     image_urls: Optional[List], audio_files: Optional[List], 
+                                     user_message: str, model_name: str, 
+                                     vector_store_id: Optional[str] = None) -> List[str]:
+        """Detect tools and model used, including file search with count."""
+        tags = self.derive_cumulative_tags(
+            tool_calls, audio_files, image_urls, user_message, final_response, model_name
+        )
+        
+        # Add file search tag with count if vector store is used
+        if vector_store_id:
+            print(f"🔍 DEBUG: Checking file_search with vector_store_id: {vector_store_id}")
+            print(f"🔍 DEBUG: tool_calls: {tool_calls}")
+            file_search_used = False
+            
+            # Check if file_search was used in tool_calls
+            if tool_calls:
+                for call in tool_calls:
+                    name = (call.get("tool_name", "") or call.get("name", "")).lower()
+                    tool_type = call.get("tool_type", "").lower()
+                    call_type = call.get("type", "").lower()
+                    print(f"🔍 DEBUG: Checking tool - name: '{name}', tool_type: '{tool_type}', type: '{call_type}'")
+                    if "file_search" in name or "file_search" in tool_type or call_type == "file_search_call":
+                        file_search_used = True
+                        print(f"🔍 DEBUG: file_search detected!")
+                        break
+            
+            # Always show file count if vector_store exists and has files
+            # This ensures the tag appears even when file_search detection fails
+            if not file_search_used and vector_store_id:
+                print(f"🔍 DEBUG: No explicit file_search detected, checking vector store for files...")
+                try:
+                    from tools.document_processor import DocumentProcessor
+                    doc_processor = DocumentProcessor()
+                    file_count = await doc_processor.get_vector_store_file_count(vector_store_id)
+                    print(f"🔍 DEBUG: file_count from vector store: {file_count}")
+                    if file_count > 0:
+                        # Always show file count when files are available
+                        file_search_used = True
+                        print(f"🔍 DEBUG: Forcing file_search_used=True because files are available")
+                except Exception as e:
+                    print(f"🔍 DEBUG: Error checking file count: {e}")
+            
+
+            
+            print(f"🔍 DEBUG: file_search_used: {file_search_used}")
+            if file_search_used:
+                # Get file count from vector store
+                try:
+                    from tools.document_processor import DocumentProcessor
+                    doc_processor = DocumentProcessor()
+                    file_count = await doc_processor.get_vector_store_file_count(vector_store_id)
+                    print(f"🔍 DEBUG: file_count from vector store: {file_count}")
+                    if file_count > 0:
+                        tags.append(f"file: {file_count}")
+                        print(f"🔍 DEBUG: Added tag 'file: {file_count}'")
+                    else:
+                        tags.append("file: 0")
+                        print(f"🔍 DEBUG: Added tag 'file: 0' (no files found)")
+                except Exception as e:
+                    print(f"🔍 DEBUG: Error getting file count: {e}")
+                    # Fallback to generic file tag if count fails
+                    tags.append("file: ?")
+        else:
+            print(f"🔍 DEBUG: No vector_store_id provided")
+        
+        return tags
 
     def format_tags_display(self, tags: List[str]) -> str:
         """Format tags as: `⛭ modelo` `Vision` etc. (modelo: gpt-4.1-mini/gpt-4o/o3-mini)"""

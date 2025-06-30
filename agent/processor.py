@@ -137,10 +137,21 @@ async def process_message(agent: Agent, message: str, image_urls: Optional[List[
             elif event.type == "run_item_stream_event":
                 # Handle higher-level events (tool calls, messages, etc)
                 if event.item.type == "tool_call_item":
+                    tool_name = getattr(event.item, 'name', 'unknown')
+                    print(f"🔍 DEBUG: tool_call_item detected - name: {tool_name}")
                     tool_info = {
-                        "tool_name": getattr(event.item, 'name', 'unknown'),
+                        "tool_name": tool_name,
                         "arguments": getattr(event.item, 'arguments', {}),
                         "type": "tool_call_started"
+                    }
+                    tool_calls.append(tool_info)
+                    await stream_callback("", full_response, tool_calls)
+                elif event.item.type == "file_search_call":
+                    print(f"🔍 DEBUG: file_search_call detected!")
+                    tool_info = {
+                        "tool_name": "file_search",
+                        "arguments": {},
+                        "type": "file_search_call"
                     }
                     tool_calls.append(tool_info)
                     await stream_callback("", full_response, tool_calls)
